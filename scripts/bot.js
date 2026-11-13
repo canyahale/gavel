@@ -8,19 +8,60 @@ const { connect, keyStores, KeyPair } = require('/home/hatch/workspace/merit/nod
 
 const CONTRACT_ID = 'gavel-0lycf4.testnet';
 const KEYS_PATH = '/home/hatch/workspace/gavel/.testnet-accounts.json';
+const STATE_PATH = '/home/hatch/workspace/gavel/bot-state.json';
 const LOG_PATH = '/home/hatch/workspace/gavel/bot.log';
 const RPC_URL = 'https://rpc.testnet.fastnear.com';
 const GAS = BigInt('30000000000000');
 const TICK_MS = 4000;
 const AUCTION_DURATION_S = 180;
 
-// Bidders: name, multiplier (valuation = income/day * mult), base prob/tick, jump.
+// Bidders: name, base multiplier (valuation = income/day * mult), base prob/tick, jump.
+// The multiplier is only the STARTING point — each bidder learns and their
+// multiplier moves with results (see the learning state below). Nothing here
+// is fixed for good.
 const BIDDERS = [
-  { name: 'Mara', accountId: 'gavel-mara-y08d0h.testnet', multiplier: 12, prob: 0.35, jumpMin: 50, jumpMax: 100 },
-  { name: 'Bram', accountId: 'gavel-bram-hag65w.testnet', multiplier: 6, prob: 0.15, jumpMin: 25, jumpMax: 25 },
-  { name: 'Pip', accountId: 'gavel-pip-76rddq.testnet', multiplier: 8, prob: 0.08, jumpMin: 100, jumpMax: 100 },
+  { name: 'Mara', accountId: 'gavel-mara-y08d0h.testnet', baseMultiplier: 12, prob: 0.35, jumpMin: 50, jumpMax: 100 },
+  { name: 'Bram', accountId: 'gavel-bram-hag65w.testnet', baseMultiplier: 6, prob: 0.15, jumpMin: 25, jumpMax: 25 },
+  { name: 'Pip', accountId: 'gavel-pip-76rddq.testnet', baseMultiplier: 8, prob: 0.08, jumpMin: 100, jumpMax: 100 },
 ];
 const HOUSE_ID = CONTRACT_ID;
+
+/* ---- Learning state: the economy that evolves on its own ----
+   Persisted to bot-state.json so a restart does not wipe what the
+   bidders learned. Each bidder carries:
+   - multiplier: their current valuation multiple (moves with results).
+   - waryOf: { rivalAccountId: times that rival outbid them }.
+   - streak: consecutive losses (drives the multiplier up) / wins.
+   Rules:
+   - Lose a lot you bid on -> multiplier +6% (bid harder next time),
+     and note the winner as a rival to be wary of.
+   - Win but overpay (payback > 10 days) -> multiplier -8% (you paid
+     too much; be more careful). Win at a good price (payback < 6)
+     -> multiplier +5% (you can afford to be bolder).
+   - Multiplier is clamped to [3, 16] so no one goes wild or gives up.
+   - A bidder who is wary of the current leader (outbid by them 3+
+     times) bids at half probability and 10% lower valuation against
+     that rival — they avoid a fight they keep losing and look for
+     another lot instead. */
+function defaultLearn(b) { return { multiplier: b.baseMultiplier, waryOf: {}, streak: 0 }; }
+function loadLearnState() {
+  // File format: { bidders: { accountId: {...} }, drops: { good_id: price } }.
+  // Older runs wrote the bidders object directly; read that too.
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    const bidders = raw.bidders || raw;
+    const drops = raw.drops || {};
+    for (const b of BIDDERS) {
+      if (!bidders[b.accountId]) bidders[b.accountId] = defaultLearn(b);
+      if (typeof bidders[b.accountId].multiplier !== 'number') bidders[b.accountId].multiplier = b.baseMultiplier;
+      if (!bidders[b.accountId].waryOf) bidders[b.accountId].waryOf = {};
+    }
+    return { bidders, drops };
+  } catch (e) { const s = {}; for (const b of BIDDERS) s[b.accountId] = defaultLearn(b); return { bidders: s, drops: {} }; }
+}
+function saveLearnState() {
+  try { fs.writeFileSync(STATE_PATH, JSON.stringify({ bidders: state.learn, drops: state.drops }, null, 2)); } catch (e) { log('STATE SAVE ERROR: ' + e.message.slice(0, 150)); }
+}
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
@@ -30,6 +71,7 @@ function log(msg) {
 
 function randInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
 
+const _learned = loadLearnState();
 const state = {
   rotateIdx: 0,
   lastPrice: {},      // good_id -> last settled winning bid
@@ -39,6 +81,9 @@ const state = {
   lastPayoutCheck: 0,
   accounts: {},       // accountId -> near Account
   viewAccount: null,
+  learn: _learned.bidders, // per-bidder learning state (persisted)
+  drops: _learned.drops,   // per-good discounted starting bid after an unsold lot (persisted)
+  bidsOn: {},         // auction_id -> Set of accountIds who bid (for learning at settle)
 };
 
 async function view(method, args) {
@@ -145,7 +190,14 @@ async function openNextLot(goods, auctions) {
     good = bidderGoods[0];
     seller = good.owner_id;
     const last = state.lastPrice[good.good_id];
-    startingBid = last ? Math.ceil(last * 1.05) : Number(good.income_per_day) * 5;
+    // A good that went unsold re-opens at its discounted price, not at
+    // lastPrice x 1.05 — otherwise it would stay stuck above what
+    // anyone will pay. The discount clears once the good sells.
+    if (state.drops[good.good_id]) {
+      startingBid = state.drops[good.good_id];
+    } else {
+      startingBid = last ? Math.ceil(last * 1.05) : Number(good.income_per_day) * 5;
+    }
   }
   try {
     const tx = await callAs(seller, 'open_auction', { good_id: good.good_id, starting_bid: String(startingBid), duration_seconds: AUCTION_DURATION_S });
@@ -160,6 +212,46 @@ async function settleLot(auction) {
     if (auction.current_bidder && Number(auction.current_bid) > 0) {
       state.lastPrice[auction.good_id] = Number(auction.current_bid);
     }
+    /* ---- Learning: the bidders adjust from what just happened ---- */
+    const biddersHere = state.bidsOn[auction.auction_id] || new Set();
+    const winner = auction.current_bidder;
+    const goodIncome = await view('get_goods', {}).then(gs => { const g = gs.find(x => x.good_id === auction.good_id); return g ? Number(g.income_per_day) : 0; }).catch(() => 0);
+    /* ---- Price discovery: an unsold lot gets cheaper ----
+       If nobody bid, the starting price was too high. Cut it 15%
+       for the next opening (floor: 3 days of income, so a good never
+       goes for less than it earns in three days). When the good
+       finally sells, the drop clears and the last sale price sets
+       the next starting bid again. This is how a stuck lot finds
+       its level on its own — no dev has to reprice it. */
+    if (!winner || Number(auction.bids_count) === 0) {
+      const floor = Math.max(25, goodIncome * 3);
+      const cut = Math.max(floor, Math.floor(Number(auction.starting_bid) * 0.85));
+      state.drops[auction.good_id] = cut;
+      log(`PRICE DROP ${auction.good_id} unsold at ${auction.starting_bid} — next starting bid ${cut} (floor ${floor})`);
+    } else {
+      delete state.drops[auction.good_id];
+    }
+    for (const b of BIDDERS) {
+      if (!biddersHere.has(b.accountId)) continue;
+      const L = state.learn[b.accountId];
+      const old = L.multiplier;
+      if (b.accountId === winner) {
+        /* Won. Was it a good deal? */
+        const payback = goodIncome > 0 ? Number(auction.current_bid) / goodIncome : 99;
+        if (payback > 10) { L.multiplier = Math.max(3, L.multiplier * 0.92); L.streak = 0; }
+        else if (payback < 6) { L.multiplier = Math.min(16, L.multiplier * 1.05); L.streak = 0; }
+        else L.streak = 0;
+        if (L.multiplier !== old) log(`LEARN ${b.name} won ${auction.good_id} payback=${payback.toFixed(1)}d multiplier ${old.toFixed(2)} -> ${L.multiplier.toFixed(2)}`);
+      } else {
+        /* Lost a lot they bid on. Bid harder next time, and get wary of the winner. */
+        L.multiplier = Math.min(16, L.multiplier * 1.06);
+        L.streak = (L.streak || 0) + 1;
+        if (winner) L.waryOf[winner] = (L.waryOf[winner] || 0) + 1;
+        log(`LEARN ${b.name} lost ${auction.good_id} to ${winner || 'nobody'} multiplier ${old.toFixed(2)} -> ${L.multiplier.toFixed(2)} (loss streak ${L.streak})`);
+      }
+    }
+    delete state.bidsOn[auction.auction_id];
+    saveLearnState();
   } catch (e) { log(`SETTLE ERROR auction=${auction.auction_id}: ${e.message.slice(0, 300)}`); }
 }
 
@@ -178,10 +270,46 @@ async function maybeBid(auction, goods) {
   for (const b of BIDDERS) {
     if (auction.current_bidder === b.accountId) continue; // already highest
     if (auction.seller_id === b.accountId) continue; // don't bid on own lot
-    const valuation = income * b.multiplier;
+    let bal;
+    try { bal = await balanceOf(b.accountId); } catch (e) { log(`BALANCE ERROR ${b.name}: ${e.message.slice(0, 150)}`); continue; }
+    /* ---- Self-recovery: a broke bidder sits out and rebuilds ----
+       Below 300 coins they do not bid at all — they claim the faucet
+       and the income from the goods they own until they are back
+       above 500. This is what stops the economy needing a hand-out:
+       a bidder who overspends recovers on their own instead of
+       needing a manual top-up. */
+    if (bal < 300) {
+      log(`RECOVER ${b.name} balance=${bal} — sitting this lot out, rebuilding from faucet + income`);
+      try {
+        const can = await view('can_claim_faucet', { account_id: b.accountId });
+        if (can) { const tx = await callAs(b.accountId, 'claim_faucet', {}); log(`RECOVER FAUCET ${b.name} +500 tx=${tx}`); }
+      } catch (e) { /* faucet already claimed today; income will rebuild them */ }
+      try {
+        const goodsOwned = goods.filter(g => g.owner_id === b.accountId && Number(g.income_accrued) > 0);
+        for (const g of goodsOwned) { const tx = await callAs(b.accountId, 'claim_income', { good_id: g.good_id }); log(`RECOVER INCOME ${b.name} ${g.good_id} accrued=${g.income_accrued} tx=${tx}`); }
+      } catch (e) { log(`RECOVER INCOME ERROR ${b.name}: ${e.message.slice(0, 150)}`); }
+      continue;
+    }
+    /* ---- Adaptive valuation: what they have learned, and what they hold ----
+       valuation = income/day x learned multiplier x budget factor.
+       Budget factor: poor (under 1000) -> 0.8x, comfortable -> 1x,
+       rich (over 3000) -> 1.15x. A broke bidder bids low; a rich one
+       bids freely. The multiplier itself moves with wins and losses
+       (see settleLot), so the strategy evolves without a dev. */
+    const L = state.learn[b.accountId];
+    let budgetFactor = 1;
+    if (bal < 1000) budgetFactor = 0.8;
+    else if (bal > 3000) budgetFactor = 1.15;
+    let valuation = income * L.multiplier * budgetFactor;
+    /* ---- Wariness: avoid a fight you keep losing ----
+       If the current leader has outbid this bidder 3+ times, halve
+       the chance of bidding and shave 10% off the valuation against
+       them. They look for another lot instead of feeding the rival. */
+    let p = Math.min(1, b.prob * urgency);
+    const waryCount = (L.waryOf && auction.current_bidder) ? (L.waryOf[auction.current_bidder] || 0) : 0;
+    if (waryCount >= 3) { p = p * 0.5; valuation = valuation * 0.9; }
     const minBid = bidsCount === 0 ? Number(auction.starting_bid) : currentBid + 25;
     if (minBid > valuation) continue; // starting bid already above what they'd pay
-    const p = Math.min(1, b.prob * urgency);
     if (Math.random() > p) continue;
     // Amount: jump over current (or starting bid if no bids yet).
     let amount;
@@ -195,8 +323,6 @@ async function maybeBid(auction, goods) {
     if (amount < minBid) amount = minBid;
     if (amount > valuation) amount = valuation;
     if (amount < minBid) continue; // valuation below the minimum increment
-    let bal;
-    try { bal = await balanceOf(b.accountId); } catch (e) { log(`BALANCE ERROR ${b.name}: ${e.message.slice(0, 150)}`); continue; }
     if (amount > bal) {
       // Bid what they can afford if it still meets the minimum.
       if (bal < minBid) { log(`SKIP ${b.name} auction=${auction.auction_id}: balance ${bal} < min bid ${minBid}`); continue; }
@@ -206,7 +332,9 @@ async function maybeBid(auction, goods) {
     }
     try {
       const tx = await callAs(b.accountId, 'place_bid', { auction_id: auction.auction_id, amount: String(amount) });
-      log(`BID ${b.name} auction=${auction.auction_id} good=${auction.good_id} amount=${amount} (was ${currentBid}, valuation ${valuation}, balance ${bal}, ${Math.round(secsLeft)}s left) tx=${tx}`);
+      log(`BID ${b.name} auction=${auction.auction_id} good=${auction.good_id} amount=${amount} (was ${currentBid}, valuation ${Math.round(valuation)}, mult ${state.learn[b.accountId].multiplier.toFixed(2)}, balance ${bal}, ${Math.round(secsLeft)}s left) tx=${tx}`);
+      if (!state.bidsOn[auction.auction_id]) state.bidsOn[auction.auction_id] = new Set();
+      state.bidsOn[auction.auction_id].add(b.accountId);
       // After a successful bid, re-read the auction state for the next bidder.
       const fresh = await view('get_auction', { auction_id: auction.auction_id });
       if (fresh) { auction.current_bid = fresh.current_bid; auction.current_bidder = fresh.current_bidder; auction.bids_count = fresh.bids_count; auction.ends_at = fresh.ends_at; }
@@ -279,7 +407,10 @@ async function tick() {
     const goods = await view('get_goods', {});
     const supply = await view('mt_total_supply', { token_id: 'gavel' });
     log(`STARTUP goods=${goods.length} total_supply=${supply}`);
-    for (const b of BIDDERS) log(`STARTUP ${b.name} ${b.accountId} balance=${await balanceOf(b.accountId)}`);
+    for (const b of BIDDERS) {
+      const L = state.learn[b.accountId];
+      log(`STARTUP ${b.name} ${b.accountId} balance=${await balanceOf(b.accountId)} multiplier=${L.multiplier.toFixed(2)} (base ${b.baseMultiplier}) waryOf=${JSON.stringify(L.waryOf)}`);
+    }
     trackOwnership(goods);
   } catch (e) { log('STARTUP CHECK ERROR: ' + e.message.slice(0, 300)); }
 
