@@ -1,0 +1,1597 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>The Gavel — Live Auction House</title>
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Public+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/near-api-js@4.0.3/dist/near-api-js.min.js"></script>
+<style>
+:root{
+  --bg:#160d08; --surface:#241610; --surface2:#3a2417; --ink:#f7ead2;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Public Sans",system-ui,sans-serif;line-height:1.5}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #e6b84e;outline-offset:2px}
+.wrap{max-width:1060px;margin:0 auto;padding:12px 12px 48px}
+header.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+h1.wordmark{font-family:"Marcellus",Georgia,serif;font-weight:400;font-size:1.7rem;margin:0;color:#f7e3ac;letter-spacing:.02em}
+h1.wordmark span{color:#e6b84e}
+.top .spacer{flex:1}
+.pill{background:#2e1d12;border:1px solid #6b4a26;color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:700;font-size:.95rem;white-space:nowrap}
+.pill b{color:#f7e3ac}
+.pill.gold{background:#e6b84e;color:#231a04;border-color:#e6b84e}
+.icon-btn{background:#2e1d12;border:1px solid #6b4a26;color:var(--ink);border-radius:50%;width:44px;height:44px;font-size:1.15rem;flex:0 0 auto}
+.btn{border:0;border-radius:12px;padding:13px 18px;font-weight:800;font-size:16px;min-height:52px;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn-gold{background:#e6b84e;color:#231a04}
+.btn-gold:hover{background:#f0c663}
+.btn-dark{background:#3a2417;color:var(--ink);border:1px solid #6b4a26}
+.btn-dark:hover{background:#4a2f1d}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.card{background:var(--surface);border:1px solid #4a2f1d;border-radius:16px;padding:16px;margin-top:14px}
+.card h2{margin:0 0 6px;font-size:1.2rem;color:#f7e3ac;font-family:"Marcellus",Georgia,serif;font-weight:400}
+.card h3{margin:14px 0 4px;font-size:1rem;color:#f7e3ac}
+.card p{margin:6px 0}
+.muted{color:#cbb391;font-size:.93rem}
+.note{font-size:.9rem;color:#cbb391}
+/* ---- The room ---- */
+.room-wrap{position:relative;border-radius:18px;overflow:hidden;border:2px solid #6b4a26;background:#1a0f08;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+#gl{position:relative;width:100%;height:56vh;min-height:340px;max-height:560px}
+#gl canvas{display:block;width:100%!important;height:100%!important}
+.hud{position:absolute;pointer-events:none;z-index:5}
+.hud-lot{top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.hud-box{background:rgba(20,11,6,.82);border:1px solid rgba(230,184,78,.6);border-radius:12px;padding:10px 12px;max-width:62%}
+.hud-box h2{margin:0;font-family:"Marcellus",Georgia,serif;font-weight:400;font-size:1.15rem;color:#f7e3ac;line-height:1.2}
+.hud-box .kind{font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#e6b84e}
+.hud-box .why{font-size:.85rem;color:#e8d9bd;margin-top:4px;line-height:1.4}
+.hud-bid{text-align:right;max-width:38%}
+.hud-bid .bid-label{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#cbb391}
+.hud-bid .bid-big{font-family:"Marcellus",Georgia,serif;font-size:clamp(1.7rem,7vw,2.4rem);line-height:1.05;color:#f7e3ac}
+.hud-bid .bid-who{font-size:.85rem;color:#e8d9bd;font-weight:700}
+.hud-bid .clock{font-family:"Marcellus",Georgia,serif;font-size:1.35rem;color:#e6b84e;line-height:1.1}
+.hud-bid .clock.low{color:#ff7a6b}
+.room-status{position:absolute;left:10px;right:10px;bottom:10px;z-index:5;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.status-line{background:rgba(20,11,6,.82);border:1px solid rgba(230,184,78,.45);border-radius:999px;padding:7px 13px;font-size:.87rem;font-weight:700;color:#f7e3ac;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.live-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2ecc71;margin-right:7px;animation:pulse 1.4s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.live-dot{animation:none}}
+.sold-banner{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%) scale(.9);z-index:8;background:linear-gradient(180deg,#e6b84e,#c9962e);color:#231a04;border-radius:16px;padding:16px 26px;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s}
+.sold-banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.sold-banner .sold-big{font-family:"Marcellus",Georgia,serif;font-size:2.2rem;line-height:1}
+.sold-banner .sold-who{font-weight:800;margin-top:6px}
+.bubble{position:absolute;z-index:6;transform:translate(-50%,-100%);background:#fff8e6;color:#231a04;border:2px solid #e6b84e;border-radius:14px;padding:6px 11px;font-weight:800;font-size:.92rem;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.45);pointer-events:none}
+.bubble:after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:#e6b84e;border-bottom:0}
+.bubble[hidden]{display:none}
+.seat-tag{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);z-index:4;background:rgba(20,11,6,.65);border:1px solid rgba(230,184,78,.35);color:#e8d9bd;border-radius:999px;padding:3px 10px;font-size:.72rem;font-weight:700;pointer-events:none;max-width:250px;text-align:center;line-height:1.3}
+/* ---- Bid box ---- */
+.bid-row{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+@media(min-width:640px){.bid-row{grid-template-columns:1fr auto auto auto}}
+.bid-amount{display:flex;gap:8px}
+.field{width:100%;padding:13px 14px;font:inherit;font-size:17px;border:1px solid #6b4a26;border-radius:12px;background:#160d08;color:var(--ink);min-height:52px}
+.field::placeholder{color:#8a6f52}
+.quick{display:flex;gap:8px}
+.quick .btn{flex:1;min-height:52px;padding:10px 8px;font-size:15px}
+.bid-msg{min-height:1.4em;font-weight:700;margin:8px 0 0}
+.bid-msg.ok{color:#7ddba4}.bid-msg.bad{color:#ff9a8a}
+.balance-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.balance-row .pill{flex:0 0 auto}
+/* ---- Bidders ---- */
+.bidders{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+@media(min-width:640px){.bidders{grid-template-columns:repeat(4,1fr)}}
+.bidder{background:#2e1d12;border:1px solid #4a2f1d;border-radius:14px;padding:12px}
+.bidder.you{border-color:#e6b84e}
+.bidder .bname{font-weight:800;font-size:1.02rem;display:flex;align-items:center;gap:8px}
+.dot{width:13px;height:13px;border-radius:50%;flex:0 0 auto;display:inline-block}
+.bidder .bstyle{font-size:.82rem;color:#cbb391}
+.bidder .bbudget{font-size:1.15rem;font-weight:800;color:#f7e3ac;margin-top:6px}
+.bidder .blast{font-size:.85rem;color:#e8d9bd;margin-top:2px;min-height:1.3em}
+.bidder.low{opacity:.75}
+.bidder.low .bbudget{color:#ff9a8a}
+/* ---- Goods / market ---- */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+.tab{background:#2e1d12;border:1px solid #4a2f1d;color:var(--ink);border-radius:999px;padding:10px 16px;font-weight:800;font-size:.95rem;min-height:46px}
+.tab.active{background:#e6b84e;color:#231a04;border-color:#e6b84e}
+.panel{display:none}
+.panel.active{display:block}
+.goods-grid{display:grid;gap:10px;margin-top:10px}
+@media(min-width:640px){.goods-grid{grid-template-columns:1fr 1fr}}
+.good{background:#2e1d12;border:1px solid #4a2f1d;border-radius:14px;padding:14px}
+.good.mine{border-color:#e6b84e}
+.good h3{margin:0;font-size:1.05rem;color:#f7e3ac}
+.good .gmeta{font-size:.88rem;color:#cbb391;margin-top:2px}
+.good .gprice{font-size:1.05rem;font-weight:800;margin-top:8px}
+.good .gwhy{font-size:.9rem;color:#e8d9bd;margin-top:6px;line-height:1.45}
+.good .gactions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.good .gactions .btn{min-height:44px;padding:9px 13px;font-size:.92rem}
+.good input.field{min-height:44px;padding:9px 12px;font-size:15px}
+.inline-field{display:flex;gap:8px;align-items:center}
+.inline-field .field{flex:1}
+/* ---- How it works ---- */
+.steps{display:grid;gap:10px;margin-top:10px}
+@media(min-width:640px){.steps{grid-template-columns:repeat(3,1fr)}}
+.step{background:#2e1d12;border:1px solid #4a2f1d;border-radius:14px;padding:14px}
+.step .when{font-family:"Marcellus",Georgia,serif;font-size:1.25rem;color:#e6b84e}
+.step p{margin:6px 0 0;font-size:.94rem}
+/* ---- Simulation ---- */
+.sim-log{margin-top:12px;display:grid;gap:4px;font-size:.92rem}
+.sim-log .day{font-weight:800;color:#e6b84e;margin-top:10px;font-size:1rem}
+.sim-log .line{color:#e8d9bd}
+.sim-log .line b{color:#f7e3ac}
+.sim-badge{display:inline-block;background:#e6b84e;color:#231a04;font-weight:800;font-size:.78rem;border-radius:999px;padding:3px 10px;letter-spacing:.04em}
+footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
+[hidden]{display:none!important}
+@media(max-width:560px){
+  .wrap{padding:10px 10px 40px}
+  .hud-box{max-width:58%;padding:8px 10px}
+  .hud-box h2{font-size:1rem}
+  .hud-box .why{font-size:.8rem}
+  .hud-bid{max-width:42%}
+  .bid-big{font-size:1.6rem}
+  #gl{height:52vh;min-height:320px}
+  .sold-banner .sold-big{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header class="top">
+  <h1 class="wordmark">The <span>Gavel</span></h1>
+  <div class="spacer"></div>
+  <span class="pill" id="pill-balance">Your coins: <b id="pill-balance-v">—</b></span>
+  <span class="pill" id="pill-pool">Prize pool: <b id="pill-pool-v">—</b></span>
+  <button class="icon-btn" id="btn-sound" type="button" aria-pressed="false" aria-label="Turn sound off" title="Sound">🔔</button>
+</header>
+
+<!-- Sign-in / seat -->
+<section class="card" id="seat-card" style="margin-top:0">
+  <h2 id="seat-title">Take your seat</h2>
+  <p class="muted" id="seat-text">Pick a display name and take your seat in the room. Your account is made right here in your browser, and your key never leaves this device. You can watch the room without taking a seat, but you need a seat to claim chips and bid.</p>
+  <div id="seat-form">
+    <div class="inline-field">
+      <input class="field" id="inp-name" type="text" maxlength="24" placeholder="Your display name, e.g. Ada" autocomplete="nickname" />
+      <button class="btn btn-gold" id="btn-seat" type="button">Take your seat</button>
+    </div>
+    <p class="note" id="seat-msg" aria-live="polite"></p>
+  </div>
+  <div id="seat-done" hidden>
+    <p style="font-weight:800;margin:4px 0">You are seated as <span id="seat-name-v"></span>.</p>
+    <p class="muted" style="margin:0">Your seat is saved on this device. Come back any time and you are still seated.</p>
+  </div>
+</section>
+
+<!-- The 3D room -->
+<section class="room-wrap" aria-label="The auction room">
+  <div id="gl"></div>
+  <div class="hud hud-lot">
+    <div class="hud-box" id="hud-lot">
+      <div class="kind" id="lot-kind">The room</div>
+      <h2 id="lot-name">The room is quiet</h2>
+      <div class="why" id="lot-why">No lot is on the podium right now. The next lot is being prepared — it will appear here the moment it opens.</div>
+    </div>
+    <div class="hud-box hud-bid" id="hud-bid" hidden>
+      <div class="bid-label">Current bid</div>
+      <div class="bid-big" id="bid-big">—</div>
+      <div class="bid-who" id="bid-who">No bids yet</div>
+      <div class="clock" id="bid-clock">—</div>
+    </div>
+  </div>
+  <div class="sold-banner" id="sold-banner" aria-live="polite">
+    <div class="sold-big">SOLD!</div>
+    <div class="sold-who" id="sold-who"></div>
+    <div id="sold-price" style="font-weight:800"></div>
+  </div>
+  <div id="bubbles"></div>
+  <div class="seat-tag" id="seat-tag">Your seat is at the front — the view from where you sit</div>
+  <div class="room-status">
+    <span class="status-line"><span class="live-dot"></span><span id="room-status">Connecting to the room…</span></span>
+  </div>
+</section>
+
+<!-- Bid box -->
+<section class="card" id="bid-card">
+  <h2>Bid on this lot</h2>
+  <div class="bid-row">
+    <div class="bid-amount">
+      <input class="field" id="inp-bid" type="number" inputmode="numeric" min="0" step="25" placeholder="Your bid in coins" aria-label="Your bid in coins" />
+    </div>
+    <div class="quick">
+      <button class="btn btn-dark" type="button" data-raise="25">Raise +25</button>
+      <button class="btn btn-dark" type="button" data-raise="50">Raise +50</button>
+      <button class="btn btn-dark" type="button" data-raise="100">Raise +100</button>
+    </div>
+    <button class="btn btn-gold" id="btn-bid" type="button">🖐 Bid — next step</button>
+    <button class="btn btn-dark" id="btn-pass" type="button">Sit this lot out</button>
+  </div>
+  <p class="bid-msg" id="bid-msg" aria-live="polite"></p>
+  <div class="balance-row">
+    <span class="pill">Your coins: <b id="bal-v">—</b></span>
+    <button class="btn btn-dark" id="btn-chips" type="button">Claim 500 free chips</button>
+    <span class="note" id="chips-note">Free chips once a day. Bids are held while you are the highest bidder and returned in full the moment someone outbids you.</span>
+  </div>
+  <p class="note" id="bid-min-note">Bids must beat the current bid by at least 25 coins. A bid in the last 30 seconds adds 30 seconds to the lot.</p>
+</section>
+
+<!-- Bidders present -->
+<section class="card">
+  <h2>In the room</h2>
+  <p class="muted" style="margin-top:0">Three regulars bid here every day. Watch how they play: Mara pushes hard, Bram waits and pounces, Pip spends carefully because the purse is nearly empty.</p>
+  <div class="bidders" id="bidders"></div>
+</section>
+
+<!-- Tabs -->
+<div class="tabs" role="tablist" aria-label="Game panels">
+  <button class="tab active" type="button" data-tab="mine" role="tab">Your goods</button>
+  <button class="tab" type="button" data-tab="market" role="tab">All goods &amp; market</button>
+  <button class="tab" type="button" data-tab="prize" role="tab">Prize</button>
+  <button class="tab" type="button" data-tab="how" role="tab">How it works</button>
+  <button class="tab" type="button" data-tab="week" role="tab">A week in a minute</button>
+</div>
+
+<section class="card panel active" id="panel-mine" role="tabpanel">
+  <h2>Your goods</h2>
+  <p class="muted" style="margin-top:0">Goods you win earn coins every day while you hold them. Claim the income, put a good up for auction again, list it at a fixed price, or sell shares in it.</p>
+  <div id="mine-empty"><p>Take your seat and win a lot, and your goods will show here.</p></div>
+  <div class="goods-grid" id="mine-grid"></div>
+</section>
+
+<section class="card panel" id="panel-market" role="tabpanel">
+  <h2>All goods &amp; market</h2>
+  <p class="muted" style="margin-top:0">Every good in the house, what it earns, what it last sold for, and who has owned it. Shares cost 100 coins each — 10 shares per good — and each share earns a tenth of the good's daily income.</p>
+  <div class="goods-grid" id="market-grid"></div>
+</section>
+
+<section class="card panel" id="panel-prize" role="tabpanel">
+  <h2>The daily prize</h2>
+  <p class="muted" style="margin-top:0">Every sale adds a little extra to the prize pool. Each day is a season: when the season ends, the pool pays out to the three owners whose goods earn the most each day — first place takes half, second takes just under a third, third takes a fifth. Win goods, earn more each day, and climb the board. The prize pays out on its own when the season ends.</p>
+  <div id="prize-body"><p>Loading the prize…</p></div>
+</section>
+
+<section class="card panel" id="panel-how" role="tabpanel">
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="step"><div class="when">30 seconds</div><p>Claim your free daily chips, pick a lot on the podium, and raise your paddle. Beat the current bid by at least 25 coins. A bid in the last 30 seconds adds 30 seconds, so no one can snipe a lot at the last moment.</p></div>
+    <div class="step"><div class="when">5 minutes</div><p>Win a lot and the good is yours. It starts earning coins every day straight away. The more a good earns each day, the more it is worth — a good earning 250 a day pays for itself far faster than one earning 60.</p></div>
+    <div class="step"><div class="when">A full session</div><p>Own goods, buy shares in other people's goods, re-list your goods at a fixed price or put them back up for auction, and come back tomorrow to claim the income that has built up. Every sale adds a little extra to the prize pool — and each day the pool pays out to the three owners whose goods earn the most. See the Prize tab for who leads and when it pays.</p></div>
+  </div>
+  <h3>Why a lot is worth what it is</h3>
+  <p>Every lot shows its daily income, its last sold price, and who has owned it before. Divide the price by the daily income and you get the payback: how many days of earnings it takes for the good to pay for itself. A low payback and a strong earnings history mean a good deal. A high payback means you are paying for the name, not the earnings.</p>
+  <h3>The three regulars</h3>
+  <p><b>Mara</b> bids early and bids big — she wants the lot and does not hide it. <b>Bram</b> is patient: he watches, then raises in steady steps when the room goes quiet. <b>Pip</b> has the smallest purse, so every bid is a real decision; when Pip raises, Pip means it.</p>
+  <p class="note">Gavel Coins are play coins for this game only. They have no cash value and cannot be taken out of the game.</p>
+</section>
+
+<section class="card panel" id="panel-week" role="tabpanel">
+  <h2>A week in a minute <span class="sim-badge">SIMULATION</span></h2>
+  <p class="muted" style="margin-top:0">Watch a week of auctions unfold in about a minute. This is a <b>simulation</b> built from the live goods and the three regulars' real habits — Mara pushing, Bram waiting, Pip spending carefully. <b>Nothing here is real:</b> no coins move, no lots change hands, and the room is untouched. It is the fastest way to see how prices and ownership move over a week.</p>
+  <button class="btn btn-gold" id="btn-sim" type="button">Watch a week of auctions unfold</button>
+  <div class="sim-log" id="sim-log" aria-live="polite"></div>
+</section>
+
+<footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
+</main>
+<script>
+"use strict";
+
+/* ================= The Gavel — game logic ================= */
+/* Visible words rule: the room speaks in game words only —
+   coins, chips, the room, your account, your seat. */
+var CONTRACT_ID = "gavel-0lycf4.testnet";
+var RPC_URLS = ["https://rpc.testnet.fastnear.com", "https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"];
+var HELPER_URL = "https://helper.testnet.near.org/account";
+var GAS = "30000000000000";
+var TOKEN_ID = "gavel";
+var MIN_INCREMENT = 25;
+var SHARE_PRICE = 100;
+
+var AGENTS = [
+  { name: "Mara", account: "gavel-mara-y08d0h.testnet", style: "Aggressive — bids early and big", color: "#e0533d", colorHex: 0xe0533d },
+  { name: "Bram", account: "gavel-bram-hag65w.testnet", style: "Cautious — waits, then pounces", color: "#4a7fd4", colorHex: 0x4a7fd4 },
+  { name: "Pip",  account: "gavel-pip-76rddq.testnet",  style: "Nearly broke — every bid counts", color: "#d9a62e", colorHex: 0xd9a62e }
+];
+var HOUSE_ACCOUNT = CONTRACT_ID;
+function displayName(account) {
+  if (!account) return "—";
+  if (account === player.accountId) return player.name || "You";
+  for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].account === account) return AGENTS[i].name;
+  if (account === HOUSE_ACCOUNT) return "The House";
+  return "A bidder";
+}
+function agentByAccount(account) {
+  for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].account === account) return AGENTS[i];
+  return null;
+}
+
+function el(id) { return document.getElementById(id); }
+function storeGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function storeSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+function fmt(n) { n = Math.round(Number(n) || 0); return n.toLocaleString("en-GB"); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function kindLabel(k) { return { stall: "Stall", route: "Route", recipe: "Recipe", relic: "Relic" }[k] || k; }
+
+/* ================= Sound — The Gavel's own synthesised set =================
+   No audio files, no stock sounds: everything below is built from
+   oscillators and filtered noise in the Web Audio API. The gavel
+   strike is a wooden crack (noise burst through a bandpass for the
+   crack, plus a low sine thump for the impact) — wood on wood,
+   never a click or a beep. Nothing plays before the first tap:
+   the audio context is created and resumed inside a user gesture,
+   and the on/off choice is saved on this device. */
+var sound = {
+  on: storeGet("gavelSound") !== "off",
+  unlocked: false,
+  ctx: null, master: null, murmurNodes: null, noiseBuf: null,
+  ensure: function () {
+    if (this.ctx) { if (this.ctx.state === "suspended") { try { this.ctx.resume(); } catch (e) {} } return true; }
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.on ? 0.9 : 0;
+      this.master.connect(this.ctx.destination);
+      var len = this.ctx.sampleRate * 1;
+      this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      var d = this.noiseBuf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      return true;
+    } catch (e) { return false; }
+  },
+  setOn: function (on) {
+    this.on = !!on;
+    storeSet("gavelSound", this.on ? "on" : "off");
+    if (this.master) this.master.gain.setTargetAtTime(this.on ? 0.9 : 0, this.ctx.currentTime, 0.03);
+    var b = el("btn-sound");
+    b.textContent = this.on ? "🔔" : "🔇";
+    b.setAttribute("aria-pressed", String(!this.on));
+    b.setAttribute("aria-label", this.on ? "Turn sound off" : "Turn sound on");
+    if (this.on) { this.ensure(); this.startMurmur(); } else { this.stopMurmur(); }
+  },
+  noise: function (dur, filterType, freq, q, gainVal, when) {
+    var t = when || this.ctx.currentTime;
+    var src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf; src.loop = true;
+    var f = this.ctx.createBiquadFilter();
+    f.type = filterType; f.frequency.value = freq; f.Q.value = q || 1;
+    var g = this.ctx.createGain();
+    g.gain.setValueAtTime(gainVal, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + dur + 0.02);
+  },
+  tone: function (freq, dur, type, gainVal, when, slideTo) {
+    var t = when || this.ctx.currentTime;
+    var o = this.ctx.createOscillator();
+    o.type = type || "triangle"; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    var g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gainVal, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  /* (1) GAVEL STRIKE — the sound of the hammer falling. A sharp wooden
+     crack (short noise burst, bandpass around 1.6kHz) layered over a
+     low wooden thump (sine dropping 140→70Hz), with a softer second
+     knock a beat later, the way a real gavel bounces once. */
+  gavel: function (doubleStrike) {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    this.noise(0.09, "bandpass", 1600, 1.4, 0.85, t);
+    this.noise(0.06, "highpass", 2500, 1, 0.35, t);
+    this.tone(140, 0.16, "sine", 0.9, t, 68);
+    this.tone(95, 0.12, "sine", 0.5, t, 60);
+    if (doubleStrike) {
+      var t2 = t + 0.16;
+      this.noise(0.07, "bandpass", 1500, 1.4, 0.5, t2);
+      this.tone(130, 0.13, "sine", 0.55, t2, 65);
+    }
+  },
+  /* (2) BID LANDING — a short crisp wooden "thock" when a bid lands. */
+  bid: function () {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    this.noise(0.045, "bandpass", 950, 2.2, 0.55, t);
+    this.tone(620, 0.06, "triangle", 0.28, t, 520);
+  },
+  /* (3) WIN — a bright little rising figure. */
+  win: function () {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    var notes = [523.25, 659.25, 783.99, 1046.5];
+    for (var i = 0; i < notes.length; i++) this.tone(notes[i], 0.22, "triangle", 0.32, t + i * 0.09);
+    this.tone(1318.5, 0.3, "sine", 0.16, t + 0.38);
+  },
+  /* (3) LOSS — a low falling figure. */
+  lose: function () {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    var notes = [329.63, 261.63, 196.0];
+    for (var i = 0; i < notes.length; i++) this.tone(notes[i], 0.3, "triangle", 0.26, t + i * 0.13);
+  },
+  /* (4) ROOM MURMUR — a very soft low murmur, filtered noise with a
+     slow breathing swell, so the room feels occupied. Subtle by design. */
+  startMurmur: function () {
+    if (!this.on || !this.unlocked || !this.ensure() || this.murmurNodes) return;
+    try {
+      var src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf; src.loop = true;
+      var f = this.ctx.createBiquadFilter();
+      f.type = "lowpass"; f.frequency.value = 320; f.Q.value = 0.4;
+      var g = this.ctx.createGain(); g.gain.value = 0.016;
+      var lfo = this.ctx.createOscillator(); lfo.frequency.value = 0.11;
+      var lg = this.ctx.createGain(); lg.gain.value = 0.007;
+      lfo.connect(lg); lg.connect(g.gain);
+      src.connect(f); f.connect(g); g.connect(this.master);
+      src.start(); lfo.start();
+      this.murmurNodes = { src: src, lfo: lfo, gain: g };
+    } catch (e) { this.murmurNodes = null; }
+  },
+  stopMurmur: function () {
+    if (!this.murmurNodes) return;
+    try { this.murmurNodes.src.stop(); this.murmurNodes.lfo.stop(); } catch (e) {}
+    this.murmurNodes = null;
+  },
+  /* (5) AUCTIONEER'S CALL — a quick rising chant, like a caller
+     rattling off bids, when a lot opens or the bidding heats up. */
+  call: function () {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    var notes = [392.0, 440.0, 493.88, 587.33, 493.88, 587.33];
+    for (var i = 0; i < notes.length; i++) this.tone(notes[i], 0.11, "triangle", 0.24, t + i * 0.085);
+  }
+};
+/* First tap anywhere wakes the audio (mobile browsers require a
+   gesture); nothing plays before that tap. */
+function armAudioOnGesture() {
+  function wake() {
+    sound.unlocked = true;
+    if (sound.on) { sound.ensure(); sound.startMurmur(); }
+    document.removeEventListener("pointerdown", wake);
+    document.removeEventListener("keydown", wake);
+  }
+  document.addEventListener("pointerdown", wake);
+  document.addEventListener("keydown", wake);
+}
+
+/* ================= Network reads (direct, raced across endpoints) ================= */
+function fetchWithTimeout(url, options, timeoutMs) {
+  var ms = timeoutMs || 8000;
+  if (typeof AbortController === "undefined") return fetch(url, options);
+  var ctrl = new AbortController();
+  var opts = {}; for (var k in options) opts[k] = options[k];
+  opts.signal = ctrl.signal;
+  var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, ms);
+  return fetch(url, opts).then(function (r) { clearTimeout(timer); return r; }, function (err) { clearTimeout(timer); throw err; });
+}
+function rpcCallVia(rpcUrl, methodName, argsObj) {
+  var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(argsObj))));
+  return fetchWithTimeout(rpcUrl, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: "gavel-read", method: "query", params: { request_type: "call_function", account_id: CONTRACT_ID, method_name: methodName, args_base64: b64, finality: "optimistic" } })
+  }, 8000).then(function (resp) { return resp.json(); }).then(function (json) {
+    if (json && json.result && json.result.result) {
+      var bytes = json.result.result, text = "";
+      for (var i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+      return JSON.parse(decodeURIComponent(escape(text)));
+    }
+    throw new Error("read failed");
+  });
+}
+function rpcCall(methodName, argsObj) {
+  return new Promise(function (resolve, reject) {
+    var settled = false, failed = 0, lastErr = null;
+    RPC_URLS.forEach(function (url) {
+      rpcCallVia(url, methodName, argsObj).then(function (v) { if (!settled) { settled = true; resolve(v); } },
+        function (err) { lastErr = err; failed += 1; if (failed >= RPC_URLS.length && !settled) { settled = true; reject(lastErr || new Error("read failed")); } });
+    });
+  });
+}
+function viewAccountVia(rpcUrl, accountId) {
+  return fetchWithTimeout(rpcUrl, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: "gavel-view", method: "query", params: { request_type: "view_account", finality: "optimistic", account_id: accountId } })
+  }, 8000).then(function (resp) { return resp.json(); }).then(function (json) {
+    if (json && json.result) return json.result;
+    var msg = json && json.error ? String(json.error.name || "") + " " + String(json.error.message || "") : "";
+    if (/not exist|UNKNOWN_ACCOUNT|unknown account/i.test(msg)) return null;
+    throw new Error("account check failed");
+  });
+}
+function viewAccount(accountId) {
+  return new Promise(function (resolve, reject) {
+    var settled = false, failed = 0, sawMissing = false;
+    RPC_URLS.forEach(function (url) {
+      viewAccountVia(url, accountId).then(function (info) {
+        if (settled) return;
+        if (info) { settled = true; resolve(info); return; }
+        sawMissing = true; failed += 1;
+        if (failed >= RPC_URLS.length) { settled = true; resolve(null); }
+      }, function () {
+        if (settled) return; failed += 1;
+        if (failed >= RPC_URLS.length) { settled = true; if (sawMissing) resolve(null); else reject(new Error("account check failed")); }
+      });
+    });
+  });
+}
+
+/* ================= Player seat (per-player account, made in this browser) =================
+   A fresh key is generated on this device, kept in this browser's
+   local store under the player's display name, and the account name
+   is built from that key's public half. The public helper creates
+   and funds the named account; a direct check afterwards is the
+   final judge of whether the account exists. Signed moves use the
+   player's own key on this device only. */
+var player = { name: storeGet("gavelName") || "", accountId: null, balance: null, canClaim: null, ready: false, ensuring: null };
+var chain = { contract: null, account: null };
+
+function keyStorageKey() { return "gavelKey:" + (player.name || "guest"); }
+function loadOrCreateKeyPair() {
+  var saved = storeGet(keyStorageKey());
+  if (saved) { try { return nearApi.KeyPair.fromString(saved); } catch (e) {} }
+  var kp = nearApi.KeyPair.fromRandom("ed25519");
+  storeSet(keyStorageKey(), kp.toString());
+  return kp;
+}
+function accountIdFor(kp) {
+  var data = kp.getPublicKey().data, hex = "";
+  for (var i = 0; i < data.length; i++) { var h = data[i].toString(16); hex += h.length < 2 ? "0" + h : h; }
+  return hex.slice(0, 32) + ".testnet";
+}
+function createAccount(accountId, publicKeyString, attempt) {
+  attempt = attempt || 1;
+  function retry() {
+    if (attempt >= 3) return Promise.resolve(null);
+    return new Promise(function (res) { setTimeout(res, 1500 * attempt); }).then(function () { return createAccount(accountId, publicKeyString, attempt + 1); });
+  }
+  return fetch(HELPER_URL, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newAccountId: accountId, newAccountPublicKey: publicKeyString })
+  }).then(function (resp) {
+    return resp.text().then(function (text) { return { ok: resp.ok, text: text || "" }; });
+  }).then(function (res) {
+    if (/already exists/i.test(res.text)) return true;
+    if (res.ok && /"SuccessValue"/.test(res.text)) return true;
+    return retry();
+  }, function () { return retry(); });
+}
+function waitForAccount(accountId, tries) {
+  return viewAccount(accountId).then(function (info) {
+    if (info) return info;
+    if (tries <= 0) return null;
+    return new Promise(function (res) { setTimeout(res, 800); }).then(function () { return waitForAccount(accountId, tries - 1); });
+  });
+}
+function ensureSeat() {
+  if (!window.nearApi) return Promise.reject(new Error("game library missing"));
+  if (player.ready && chain.contract) return Promise.resolve(chain);
+  if (player.ensuring) return player.ensuring;
+  player.ensuring = (async function () {
+    var kp = loadOrCreateKeyPair();
+    var accountId = accountIdFor(kp);
+    player.accountId = accountId;
+    storeSet("gavelAccount:" + (player.name || "guest"), accountId);
+    var info = await viewAccount(accountId);
+    if (!info) {
+      await createAccount(accountId, kp.getPublicKey().toString());
+      info = await waitForAccount(accountId, 15);
+    }
+    if (!info) throw new Error("Your seat could not be set up. Check your connection and try again.");
+    var keyStore = new nearApi.keyStores.InMemoryKeyStore();
+    await keyStore.setKey("testnet", accountId, kp);
+    var near = await nearApi.connect({ networkId: "testnet", keyStore: keyStore, nodeUrl: RPC_URLS[0] });
+    var account = await near.account(accountId);
+    var contract = new nearApi.Contract(account, CONTRACT_ID, {
+      viewMethods: ["get_goods", "get_open_auctions", "get_auctions", "get_auction", "get_good", "mt_balance_of", "mt_total_supply", "get_prize_pool", "get_season_info", "get_leaderboard", "get_last_payout", "can_claim_faucet", "get_income_accrued", "get_shares", "get_all_shares"],
+      changeMethods: ["claim_faucet", "place_bid", "open_auction", "settle_auction", "claim_income", "buy_share", "sell_share", "list_good", "buy_good", "delist_good"],
+      useLocalViewExecution: false
+    });
+    chain.account = account; chain.contract = contract;
+    player.ready = true;
+    return chain;
+  })();
+  player.ensuring.then(function () {}, function () { player.ensuring = null; });
+  return player.ensuring;
+}
+function signedCall(method, args) {
+  return ensureSeat().then(function () {
+    return chain.contract[method](args, BigInt(GAS), BigInt(0));
+  });
+}
+
+/* ================= The 3D room ================= */
+var room = { renderer: null, scene: null, camera: null, clock: null, figures: {}, gavel: null, gavelBase: 0, lotGroup: null, lotKind: null, auctioneerArm: null, strikeT: -1, ready: false };
+var bubbles = {}; /* name -> {el, figure, until} */
+
+function makeLabelSprite(text, color) {
+  var c = document.createElement("canvas"); c.width = 256; c.height = 72;
+  var g = c.getContext("2d");
+  g.fillStyle = "rgba(20,11,6,0.85)";
+  g.beginPath(); g.roundRect ? g.roundRect(6, 8, 244, 56, 16) : g.rect(6, 8, 244, 56); g.fill();
+  g.strokeStyle = color || "#e6b84e"; g.lineWidth = 4; g.stroke();
+  g.fillStyle = "#f7e3ac"; g.font = "bold 34px Georgia, serif"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(text, 128, 38);
+  var tex = new THREE.CanvasTexture(c);
+  var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  var spr = new THREE.Sprite(mat);
+  spr.scale.set(1.5, 0.42, 1);
+  return spr;
+}
+function makeFigure(colorHex, name, opts) {
+  opts = opts || {};
+  var group = new THREE.Group();
+  var bodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
+  var skinMat = new THREE.MeshLambertMaterial({ color: 0xe8b98a });
+  var darkMat = new THREE.MeshLambertMaterial({ color: 0x2a1a10 });
+  /* chair */
+  var chairMat = new THREE.MeshLambertMaterial({ color: 0x5a2e1a });
+  var seat = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.1, 0.55), chairMat);
+  seat.position.y = 0.45; group.add(seat);
+  var back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.7, 0.08), chairMat);
+  back.position.set(0, 0.85, 0.26); group.add(back);
+  var legL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.45, 0.07), darkMat);
+  legL.position.set(-0.25, 0.22, -0.2); group.add(legL);
+  var legR = legL.clone(); legR.position.x = 0.25; group.add(legR);
+  /* body + head */
+  var body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.62, 10), bodyMat);
+  body.position.y = 0.82; group.add(body);
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), skinMat);
+  head.position.y = 1.28; group.add(head);
+  var hat = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.22, 10), new THREE.MeshLambertMaterial({ color: colorHex }));
+  hat.position.y = 1.44; group.add(hat);
+  /* right arm + paddle (pivot at shoulder) */
+  var armPivot = new THREE.Group();
+  armPivot.position.set(0.24, 1.05, 0);
+  var arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), bodyMat);
+  arm.position.y = -0.18; armPivot.add(arm);
+  var paddle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, 0.03), new THREE.MeshLambertMaterial({ color: 0xf7e3ac }));
+  paddle.position.y = -0.48; armPivot.add(paddle);
+  armPivot.rotation.z = 0.25; /* resting, paddle down at side */
+  group.add(armPivot);
+  /* left arm resting */
+  var armL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.4, 0.09), bodyMat);
+  armL.position.set(-0.26, 0.85, 0); armL.rotation.z = 0.3; group.add(armL);
+  var label = makeLabelSprite(name, "#" + ("000000" + colorHex.toString(16)).slice(-6));
+  label.position.y = 1.78; group.add(label);
+  group.userData = { armPivot: armPivot, body: body, head: head, label: label, raise: 0, raiseTarget: 0, lean: 0, leanTarget: 0, hop: 0, hopT: -1, slump: 0, slumpTarget: 0, dim: false, swayPhase: Math.random() * 6.28, baseY: 0 };
+  return group;
+}
+function makeLotMesh(kind) {
+  var g = new THREE.Group();
+  var gold = new THREE.MeshLambertMaterial({ color: 0xe6b84e });
+  var red = new THREE.MeshLambertMaterial({ color: 0x8e2f23 });
+  if (kind === "stall") {
+    var base = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.5), new THREE.MeshLambertMaterial({ color: 0x7a4a22 }));
+    base.position.y = 0.2; g.add(base);
+    var awn = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.7), red);
+    awn.position.y = 0.62; awn.rotation.z = 0.08; g.add(awn);
+    var poleL = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.25, 6), gold);
+    poleL.position.set(-0.4, 0.5, 0); g.add(poleL);
+    var poleR = poleL.clone(); poleR.position.x = 0.4; g.add(poleR);
+  } else if (kind === "route") {
+    var post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 8), new THREE.MeshLambertMaterial({ color: 0x7a4a22 }));
+    post.position.y = 0.35; g.add(post);
+    var sign = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.18, 0.05), gold);
+    sign.position.y = 0.62; g.add(sign);
+    var sign2 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.05), red);
+    sign2.position.set(0.05, 0.42, 0); sign2.rotation.z = 0.1; g.add(sign2);
+  } else if (kind === "recipe") {
+    var book = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.08, 0.5), new THREE.MeshLambertMaterial({ color: 0x3d5a80 }));
+    book.position.y = 0.32; book.rotation.y = 0.4; g.add(book);
+    var pages = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.05, 0.44), new THREE.MeshLambertMaterial({ color: 0xf7e3ac }));
+    pages.position.y = 0.36; pages.rotation.y = 0.4; g.add(pages);
+    var scroll = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 10), new THREE.MeshLambertMaterial({ color: 0xe8d9bd }));
+    scroll.rotation.z = Math.PI / 2; scroll.position.set(0, 0.12, 0.25); g.add(scroll);
+  } else { /* relic */
+    var gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), new THREE.MeshLambertMaterial({ color: 0xe6b84e, emissive: 0x8a6d1b }));
+    gem.position.y = 0.42; g.add(gem);
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.03, 8, 24), gold);
+    ring.position.y = 0.42; ring.rotation.x = Math.PI / 2.4; g.add(ring);
+  }
+  return g;
+}
+function initRoom() {
+  if (!window.THREE) { el("room-status").textContent = "The 3D room could not load — check your connection and reload."; return; }
+  var holder = el("gl");
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a0f08);
+  scene.fog = new THREE.Fog(0x1a0f08, 12, 26);
+  var camera = new THREE.PerspectiveCamera(68, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 60);
+  camera.position.set(0, 1.9, 6.8);
+  camera.lookAt(0, 1.15, -5);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(holder.clientWidth, holder.clientHeight);
+  holder.appendChild(renderer.domElement);
+  scene.add(new THREE.AmbientLight(0xffe0b3, 0.8));
+  var spot = new THREE.SpotLight(0xffd98a, 1.4, 22, 0.7, 0.5, 1);
+  spot.position.set(0, 6, -1); spot.target.position.set(0, 1, -5.5);
+  scene.add(spot); scene.add(spot.target);
+  var warm = new THREE.PointLight(0xffb36b, 0.9, 14);
+  warm.position.set(0, 3.2, 2); scene.add(warm);
+  var podiumLight = new THREE.PointLight(0xffd98a, 0.9, 9);
+  podiumLight.position.set(0, 3.4, -3.4); scene.add(podiumLight);
+  var fill = new THREE.PointLight(0xffe9c4, 0.35, 12);
+  fill.position.set(-4, 2.5, 4); scene.add(fill);
+  /* floor, carpet, walls */
+  var floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 18), new THREE.MeshLambertMaterial({ color: 0x7d4f2e }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -1); scene.add(floor);
+  var carpet = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 12), new THREE.MeshLambertMaterial({ color: 0x7e1f1a }));
+  carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.01, -1); scene.add(carpet);
+  var wallMat = new THREE.MeshLambertMaterial({ color: 0x54331e });
+  var backWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 7), wallMat);
+  backWall.position.set(0, 3.5, -7.5); scene.add(backWall);
+  var sideL = new THREE.Mesh(new THREE.PlaneGeometry(18, 7), wallMat);
+  sideL.rotation.y = Math.PI / 2; sideL.position.set(-9, 3.5, -1); scene.add(sideL);
+  var sideR = sideL.clone(); sideR.rotation.y = -Math.PI / 2; sideR.position.x = 9; scene.add(sideR);
+  /* wall lamps */
+  [-5.5, -2.5, 2.5, 5.5].forEach(function (x) {
+    var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshLambertMaterial({ color: 0xffd98a, emissive: 0xaa7722 }));
+    lamp.position.set(x, 3.4, -7.3); scene.add(lamp);
+  });
+  /* podium + auctioneer */
+  var podium = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.0, 0.8), new THREE.MeshLambertMaterial({ color: 0x4a2c14 }));
+  podium.position.set(0, 0.5, -5.6); scene.add(podium);
+  var podiumTop = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 1.0), new THREE.MeshLambertMaterial({ color: 0xe6b84e }));
+  podiumTop.position.set(0, 1.04, -5.6); scene.add(podiumTop);
+  var auc = new THREE.Group();
+  var aucBody = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.85, 10), new THREE.MeshLambertMaterial({ color: 0x1c1c22 }));
+  aucBody.position.y = 1.15; auc.add(aucBody);
+  var aucHead = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), new THREE.MeshLambertMaterial({ color: 0xe8b98a }));
+  aucHead.position.y = 1.78; auc.add(aucHead);
+  var aucHat = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.14, 10), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+  aucHat.position.y = 1.94; auc.add(aucHat);
+  var aucArm = new THREE.Group();
+  aucArm.position.set(0.28, 1.5, 0);
+  var aucArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.1), new THREE.MeshLambertMaterial({ color: 0x1c1c22 }));
+  aucArmMesh.position.y = -0.22; aucArm.add(aucArmMesh);
+  aucArm.rotation.z = -0.5; auc.add(aucArm);
+  auc.position.set(0, 0.35, -6.1); auc.scale.set(1.15, 1.15, 1.15); scene.add(auc);
+  room.auctioneerArm = aucArm;
+  /* the gavel on the podium */
+  var gavel = new THREE.Group();
+  var handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.55, 8), new THREE.MeshLambertMaterial({ color: 0x8a5a2a }));
+  handle.rotation.z = Math.PI / 2; gavel.add(handle);
+  var headG = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.3, 10), new THREE.MeshLambertMaterial({ color: 0x5a3418 }));
+  headG.rotation.x = Math.PI / 2; headG.position.x = 0.3; gavel.add(headG);
+  gavel.position.set(0.45, 1.13, -5.5);
+  gavel.rotation.z = 0.35;
+  scene.add(gavel);
+  room.gavel = gavel; room.gavelBase = 0.35;
+  var block = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.05, 12), new THREE.MeshLambertMaterial({ color: 0x7a4a22 }));
+  block.position.set(0.45, 1.10, -5.5); scene.add(block);
+  /* lot pedestal in front of the podium */
+  var ped = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 0.85, 12), new THREE.MeshLambertMaterial({ color: 0x3a2417 }));
+  ped.position.set(0, 0.42, -3.6); scene.add(ped);
+  var pedTop = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.06, 12), new THREE.MeshLambertMaterial({ color: 0xe6b84e }));
+  pedTop.position.set(0, 0.88, -3.6); scene.add(pedTop);
+  room.lotGroup = new THREE.Group();
+  room.lotGroup.position.set(0, 0.91, -3.6);
+  room.lotGroup.scale.set(1.7, 1.7, 1.7);
+  scene.add(room.lotGroup);
+  /* bidders: Mara left, Bram centre, Pip right — front row, facing the podium */
+  var spots = [
+    { name: "Mara", x: -1.95, z: 2.8, color: 0xe0533d },
+    { name: "Bram", x: 1.95, z: 2.8, color: 0x4a7fd4 },
+    { name: "Pip", x: -1.15, z: 3.6, color: 0xd9a62e }
+  ];
+  spots.forEach(function (s) {
+    var f = makeFigure(s.color, s.name);
+    f.position.set(s.x, 0, s.z);
+    f.rotation.y = Math.PI; /* face the podium (away from camera) */
+    scene.add(f);
+    room.figures[s.name] = f;
+  });
+  /* the player's own figure — front row, right side, seen over the shoulder,
+     so your own paddle raise is visible in the room */
+  var you = makeFigure(0x2e9e6b, player.name || "You");
+  you.position.set(1.15, 0, 3.6);
+  you.rotation.y = Math.PI - 0.35;
+  scene.add(you);
+  room.figures.__you = you;
+  /* a few extra faces in the side rows, for a full room */
+  [[-4.6, 1.2, 0x7a5a8a], [4.8, 1.0, 0x8a6f5a], [-4.9, 4.8, 0x5a7a6b], [5.0, 4.9, 0x6b5a7a]].forEach(function (a) {
+    var f = makeFigure(a[2], "");
+    f.position.set(a[0], 0, a[1]);
+    f.rotation.y = Math.PI + (Math.random() - 0.5) * 0.4;
+    f.userData.label.visible = false;
+    scene.add(f);
+  });
+  room.renderer = renderer; room.scene = scene; room.camera = camera;
+  room.clock = new THREE.Clock();
+  room.ready = true;
+  window.addEventListener("resize", function () {
+    if (!room.renderer) return;
+    var w = holder.clientWidth, h = holder.clientHeight;
+    room.camera.aspect = w / Math.max(1, h); room.camera.updateProjectionMatrix();
+    room.renderer.setSize(w, h);
+  });
+  animateRoom();
+}
+function setLotMesh(kind) {
+  if (!room.ready || room.lotKind === kind) return;
+  room.lotKind = kind;
+  while (room.lotGroup.children.length) room.lotGroup.remove(room.lotGroup.children[0]);
+  if (kind) room.lotGroup.add(makeLotMesh(kind));
+}
+/* ---- Reactions: what makes the room alive ---- */
+function figureRaise(name, ms) {
+  var f = room.figures[name]; if (!f) return;
+  f.userData.raiseTarget = 1; f.userData.leanTarget = 0.25;
+  setTimeout(function () { f.userData.raiseTarget = 0; f.userData.leanTarget = 0; }, ms || 2600);
+}
+function figureHop(name) {
+  var f = room.figures[name]; if (!f) return;
+  f.userData.hopT = 0;
+}
+function figureSlump(name) {
+  var f = room.figures[name]; if (!f) return;
+  f.userData.slumpTarget = 1;
+  setTimeout(function () { f.userData.slumpTarget = 0; }, 3500);
+}
+function figureLowBudget(name, low) {
+  var f = room.figures[name]; if (!f) return;
+  f.userData.dim = !!low;
+  f.userData.slumpTarget = low ? 0.45 : 0;
+}
+function strikeGavel() {
+  if (room.ready) room.strikeT = 0;
+  if (room.auctioneerArm) room.auctioneerArm.rotation.z = -1.2;
+  setTimeout(function () { if (room.auctioneerArm) room.auctioneerArm.rotation.z = -0.5; }, 700);
+}
+function showBubble(name, text, ms) {
+  var holder = el("bubbles");
+  var b = bubbles[name];
+  if (!b) {
+    var div = document.createElement("div");
+    div.className = "bubble"; div.hidden = true;
+    holder.appendChild(div);
+    b = bubbles[name] = { el: div, figure: room.figures[name] || room.figures.__you, until: 0 };
+  }
+  b.el.textContent = text;
+  b.el.hidden = false;
+  b.until = Date.now() + (ms || 4000);
+  if (b.figure !== room.figures[name] && room.figures[name]) b.figure = room.figures[name];
+}
+function animateRoom() {
+  if (!room.ready) return;
+  requestAnimationFrame(animateRoom);
+  var dt = Math.min(0.05, room.clock.getDelta());
+  var t = room.clock.elapsedTime;
+  if (room.lotGroup && room.lotGroup.children.length) room.lotGroup.rotation.y += dt * 0.7;
+  /* gavel strike animation */
+  if (room.strikeT >= 0) {
+    room.strikeT += dt;
+    var s = room.strikeT;
+    var ang;
+    if (s < 0.12) ang = room.gavelBase + (s / 0.12) * 0.5;
+    else if (s < 0.24) ang = room.gavelBase + 0.5 - ((s - 0.12) / 0.12) * 1.15;
+    else if (s < 0.4) ang = room.gavelBase - 0.65 + ((s - 0.24) / 0.16) * 0.65;
+    else { ang = room.gavelBase; room.strikeT = -1; }
+    room.gavel.rotation.z = ang;
+  }
+  Object.keys(room.figures).forEach(function (key) {
+    var f = room.figures[key], u = f.userData;
+    /* paddle raise + lean */
+    u.raise += (u.raiseTarget - u.raise) * Math.min(1, dt * 10);
+    u.lean += (u.leanTarget - u.lean) * Math.min(1, dt * 8);
+    u.slump += (u.slumpTarget - u.slump) * Math.min(1, dt * 5);
+    u.armPivot.rotation.z = 0.25 - u.raise * 2.5;
+    u.armPivot.rotation.x = -u.raise * 0.9;
+    f.rotation.x = u.lean * 0.22 + u.slump * 0.3;
+    /* hop on a win */
+    if (u.hopT >= 0) {
+      u.hopT += dt;
+      var h = u.hopT;
+      f.position.y = h < 0.7 ? Math.abs(Math.sin(h * 9)) * 0.22 * (1 - h / 0.7) : 0;
+      if (h >= 0.7) { u.hopT = -1; f.position.y = 0; }
+    }
+    /* idle sway + low-budget dimming */
+    var sway = Math.sin(t * 1.1 + u.swayPhase) * 0.02;
+    f.rotation.z = sway - u.slump * 0.06;
+    var targetOp = u.dim ? 0.55 : 1;
+    f.traverse(function (o) { if (o.material && o.material.transparent !== undefined) { o.material.transparent = true; o.material.opacity += (targetOp - o.material.opacity) * Math.min(1, dt * 3); } });
+  });
+  /* project bid bubbles onto the screen */
+  var holder = el("gl");
+  var w = holder.clientWidth, h = holder.clientHeight;
+  var v = new THREE.Vector3();
+  Object.keys(bubbles).forEach(function (name) {
+    var b = bubbles[name];
+    if (Date.now() > b.until) { b.el.hidden = true; return; }
+    if (!b.figure || !room.camera) { b.el.hidden = true; return; }
+    v.setFromMatrixPosition(b.figure.matrixWorld);
+    v.y += 2.0;
+    v.project(room.camera);
+    if (v.z > 1) { b.el.hidden = true; return; }
+    b.el.hidden = false;
+    b.el.style.left = ((v.x * 0.5 + 0.5) * w) + "px";
+    b.el.style.top = ((-v.y * 0.5 + 0.5) * h) + "px";
+  });
+  room.renderer.render(room.scene, room.camera);
+}
+
+/* ================= Live state ================= */
+var state = { goods: [], open: [], auctions: [], prize: 0, shares: {}, agentBal: {}, season: null, board: [], lastPayout: null, loaded: false };
+var prevAuctions = {}; /* auction_id -> {bids, bid, bidder, settled} */
+var seenAuctions = {};
+var settledAttempted = {};
+var myBidAuctions = {};
+var passedLotId = null;
+var pollTimer = null;
+var currentLotCache = null;
+
+function currentLot() {
+  if (!state.open.length) return null;
+  var best = state.open[0];
+  for (var i = 1; i < state.open.length; i++) if (state.open[i].ends_at < best.ends_at) best = state.open[i];
+  return best;
+}
+function goodById(id) {
+  for (var i = 0; i < state.goods.length; i++) if (state.goods[i].good_id === id) return state.goods[i];
+  return null;
+}
+function saleHistory(goodId) {
+  var done = state.auctions.filter(function (a) { return a.good_id === goodId && a.settled && a.winner; });
+  done.sort(function (a, b) { return b.auction_id - a.auction_id; });
+  return done;
+}
+function paybackDays(price, incomePerDay) {
+  var inc = Number(incomePerDay) || 0;
+  if (!inc || !price) return null;
+  return Math.max(1, Math.ceil(Number(price) / inc));
+}
+function whyText(good, price) {
+  var inc = Number(good.income_per_day) || 0;
+  var hist = saleHistory(good.good_id);
+  var parts = ["Earns " + fmt(inc) + " coins a day"];
+  if (hist.length) {
+    parts.push("last sold for " + fmt(hist[0].current_bid) + " to " + displayName(hist[0].winner));
+    var owners = [];
+    hist.forEach(function (h) { var n = displayName(h.winner); if (owners.indexOf(n) < 0) owners.push(n); });
+    if (owners.length) parts.push("owned before by " + owners.slice(0, 3).join(", "));
+  } else {
+    parts.push("never sold before — first time on the podium");
+  }
+  if (price) {
+    var pb = paybackDays(price, inc);
+    if (pb) parts.push("pays for itself in about " + pb + " day" + (pb === 1 ? "" : "s") + " of earnings at this price");
+  }
+  return parts.join(" · ") + ".";
+}
+
+function poll() {
+  var calls = [
+    rpcCall("get_goods", {}).catch(function () { return null; }),
+    rpcCall("get_open_auctions", {}).catch(function () { return null; }),
+    rpcCall("get_auctions", {}).catch(function () { return null; }),
+    rpcCall("get_prize_pool", {}).catch(function () { return null; }),
+    rpcCall("get_all_shares", {}).catch(function () { return null; }),
+    rpcCall("get_season_info", {}).catch(function () { return null; }),
+    rpcCall("get_leaderboard", {}).catch(function () { return null; }),
+    rpcCall("get_last_payout", {}).catch(function () { return null; })
+  ];
+  AGENTS.forEach(function (a) { calls.push(rpcCall("mt_balance_of", { account_id: a.account, token_id: TOKEN_ID }).catch(function () { return null; })); });
+  if (player.accountId) {
+    calls.push(rpcCall("mt_balance_of", { account_id: player.accountId, token_id: TOKEN_ID }).catch(function () { return null; }));
+    calls.push(rpcCall("can_claim_faucet", { account_id: player.accountId }).catch(function () { return null; }));
+  }
+  return Promise.all(calls).then(function (r) {
+    if (r[0]) state.goods = r[0];
+    if (r[1]) state.open = r[1];
+    if (r[2]) state.auctions = r[2];
+    if (r[3] != null) state.prize = Number(r[3]) || 0;
+    if (r[4]) {
+      state.shares = {};
+      r[4].forEach(function (s) { state.shares[s.good_id] = s; });
+    }
+    if (r[5]) state.season = r[5];
+    if (r[6]) state.board = r[6];
+    if (r[7] !== undefined) state.lastPayout = r[7];
+    AGENTS.forEach(function (a, i) { if (r[8 + i] != null) state.agentBal[a.name] = Number(r[8 + i]) || 0; });
+    var off = 8 + AGENTS.length;
+    if (player.accountId) {
+      if (r[off] != null) player.balance = Number(r[off]) || 0;
+      if (r[off + 1] != null) player.canClaim = !!r[off + 1];
+    }
+    state.loaded = true;
+    onStateChanged();
+    return true;
+  }, function () {
+    el("room-status").textContent = "The room is reconnecting… your seat is safe.";
+    return false;
+  });
+}
+function onStateChanged() {
+  var lot = currentLot();
+  currentLotCache = lot;
+  /* detect new bids, new lots, settlements */
+  state.auctions.concat(state.open).forEach(function (a) {
+    var prev = prevAuctions[a.auction_id];
+    if (!prev) {
+      seenAuctions[a.auction_id] = true;
+      if (!a.settled && a.bids_count === 0 && state.loaded) { /* a lot just opened */ }
+    } else {
+      if (a.bids_count > prev.bids && String(a.current_bid) !== String(prev.bid)) {
+        onNewBid(a);
+      }
+      if (a.settled && !prev.settled) onSettled(a);
+    }
+    prevAuctions[a.auction_id] = { bids: a.bids_count, bid: a.current_bid, bidder: a.current_bidder, settled: a.settled };
+  });
+  /* a lot opened since the last poll */
+  state.open.forEach(function (a) {
+    if (!seenAuctions["announced" + a.auction_id]) {
+      seenAuctions["announced" + a.auction_id] = true;
+      if (a.bids_count === 0) {
+        sound.call();
+        el("room-status").textContent = "A new lot is on the podium — " + goodName(a) + ".";
+      }
+    }
+  });
+  renderHud(lot);
+  renderBidders();
+  AGENTS.forEach(function (a) {
+    var bal = state.agentBal[a.name];
+    if (bal != null) figureLowBudget(a.name, bal < 500);
+  });
+  renderMarket();
+  renderMine();
+  renderPrize();
+  updateBalanceUI();
+  /* settle lots whose time is up — anyone may call the hammer */
+  state.auctions.forEach(function (a) {
+    if (!a.settled && a.ends_at <= Date.now() * 1000000 && !settledAttempted[a.auction_id]) {
+      settledAttempted[a.auction_id] = true;
+      if (player.ready) {
+        signedCall("settle_auction", { auction_id: a.auction_id }).then(function () { poll(); }, function () {});
+      }
+    }
+  });
+}
+function goodName(a) {
+  var g = goodById(a.good_id);
+  return g ? g.name : (a.good_name || "A lot");
+}
+function onNewBid(a) {
+  var bidder = a.current_bidder;
+  var name = displayName(bidder);
+  var amount = Number(a.current_bid) || 0;
+  var agent = agentByAccount(bidder);
+  if (agent) {
+    figureRaise(agent.name, 2800);
+    showBubble(agent.name, agent.name + " — " + fmt(amount), 4200);
+    var bal = state.agentBal[agent.name];
+    if (bal != null) figureLowBudget(agent.name, bal < 500);
+  } else if (bidder === player.accountId) {
+    figureRaise("__you", 2800);
+    showBubble("You", (player.name || "You") + " — " + fmt(amount), 4200);
+    myBidAuctions[a.auction_id] = true;
+  }
+  sound.bid();
+  el("room-status").textContent = name + " bids " + fmt(amount) + " on " + goodName(a) + ".";
+  /* if the player was outbid, say so plainly */
+  if (player.accountId && bidder !== player.accountId && myBidAuctions[a.auction_id]) {
+    setBidMsg("You have been outbid on this lot — raise again or sit it out.", "bad");
+  }
+}
+function onSettled(a) {
+  strikeGavel();
+  sound.gavel(true);
+  var winner = displayName(a.winner);
+  var amount = Number(a.current_bid) || 0;
+  el("sold-who").textContent = goodName(a) + " goes to " + winner;
+  el("sold-price").textContent = fmt(amount) + " coins";
+  var banner = el("sold-banner");
+  banner.classList.add("show");
+  setTimeout(function () { banner.classList.remove("show"); }, 4500);
+  var agent = agentByAccount(a.winner);
+  if (agent) {
+    figureHop(agent.name);
+    showBubble(agent.name, agent.name + " wins!", 4500);
+  } else if (a.winner === player.accountId) {
+    figureHop("__you");
+    sound.win();
+    setBidMsg("You won " + goodName(a) + " for " + fmt(amount) + " coins! It is yours now — see Your goods.", "ok");
+  }
+  AGENTS.forEach(function (ag) {
+    if (ag.account !== a.winner) figureSlump(ag.name);
+  });
+  if (a.winner !== player.accountId && myBidAuctions[a.auction_id]) {
+    sound.lose();
+    figureSlump("__you");
+    setBidMsg("The hammer fell — " + winner + " took this lot for " + fmt(amount) + " coins. The next lot is yours.", "bad");
+  }
+  el("room-status").textContent = "SOLD — " + goodName(a) + " to " + winner + " for " + fmt(amount) + " coins.";
+  setTimeout(function () { poll(); }, 1500);
+}
+
+/* ================= HUD + panels ================= */
+function renderHud(lot) {
+  var lotBox = el("hud-lot"), bidBox = el("hud-bid");
+  if (!lot) {
+    bidBox.hidden = true;
+    el("lot-kind").textContent = "The room";
+    el("lot-name").textContent = "The room is quiet";
+    var next = null;
+    state.goods.forEach(function (g) {
+      if (g.owner_id === HOUSE_ACCOUNT && !next) next = g;
+    });
+    if (next) {
+      el("lot-why").textContent = "Coming up: " + next.name + " — earns " + fmt(next.income_per_day) + " coins a day. " + whyText(next, null);
+      setLotMesh(next.kind);
+    } else {
+      el("lot-why").textContent = "No lot is on the podium right now. The next lot is being prepared — it will appear here the moment it opens.";
+      setLotMesh(null);
+    }
+    if (state.loaded && !state.open.length) el("room-status").textContent = "The room is quiet — the next lot is being prepared.";
+    el("btn-bid").disabled = true;
+    document.querySelectorAll("[data-raise]").forEach(function (b) { b.disabled = true; });
+    el("bid-min-note").textContent = "No lot is open right now. The moment one opens, one tap is all it takes to bid.";
+    return;
+  }
+  var good = goodById(lot.good_id) || { name: lot.good_name, kind: lot.good_kind, income_per_day: lot.good_income_per_day };
+  el("lot-kind").textContent = kindLabel(good.kind) + " · earns " + fmt(good.income_per_day) + " a day";
+  el("lot-name").textContent = good.name;
+  el("lot-why").textContent = whyText(good, lot.current_bid);
+  setLotMesh(good.kind);
+  bidBox.hidden = false;
+  el("bid-big").textContent = fmt(lot.current_bid) + " coins";
+  el("bid-who").textContent = lot.current_bidder ? "Leading: " + displayName(lot.current_bidder) + " · " + fmt(lot.bids_count) + " bid" + (lot.bids_count === 1 ? "" : "s") : "Opening price — no bids yet · be the first";
+  var passed = passedLotId === lot.auction_id;
+  el("btn-bid").disabled = passed;
+  el("btn-pass").textContent = passed ? "Jump back in" : "Sit this lot out";
+  document.querySelectorAll("[data-raise]").forEach(function (b) { b.disabled = passed; });
+  var nextBid = lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid) + MIN_INCREMENT;
+  el("btn-bid").textContent = "🖐 Bid " + fmt(nextBid);
+  el("bid-min-note").textContent = "One tap bids " + fmt(nextBid) + ". Bids must beat the current bid by at least 25 coins. A bid in the last 30 seconds adds 30 seconds to the lot.";
+  if (state.loaded && !passed) el("room-status").textContent = "Live — " + good.name + " is on the podium.";
+}
+setInterval(function () {
+  var lot = currentLotCache;
+  var clockEl = el("bid-clock");
+  if (!lot) { clockEl.textContent = ""; return; }
+  var ms = Math.floor(Number(lot.ends_at) / 1000000) - Date.now();
+  if (ms <= 0) { clockEl.textContent = "The hammer is falling…"; clockEl.classList.add("low"); return; }
+  var s = Math.ceil(ms / 1000);
+  var m = Math.floor(s / 60), ss = s % 60;
+  clockEl.textContent = (m > 0 ? m + "m " : "") + (ss < 10 ? "0" : "") + ss + "s left";
+  clockEl.classList.toggle("low", s <= 30);
+}, 250);
+
+function updateBalanceUI() {
+  var bal = player.balance == null ? "—" : fmt(player.balance) + " coins";
+  el("pill-balance-v").textContent = bal;
+  el("bal-v").textContent = bal;
+  el("pill-pool-v").textContent = fmt(state.prize) + " coins";
+  var chips = el("btn-chips");
+  if (player.accountId) {
+    chips.disabled = player.canClaim === false;
+    chips.textContent = player.canClaim === false ? "Chips claimed for today" : "Claim 500 free chips";
+  } else {
+    chips.disabled = false;
+    chips.textContent = "Claim 500 free chips";
+  }
+}
+function renderBidders() {
+  var holder = el("bidders");
+  var html = "";
+  AGENTS.forEach(function (a) {
+    var bal = state.agentBal[a.name];
+    var low = bal != null && bal < 500;
+    var lastBid = "";
+    var lot = currentLotCache;
+    if (lot && lot.current_bidder === a.account) lastBid = "Last bid: " + fmt(lot.current_bid);
+    else if (lot) lastBid = "Watching this lot";
+    else lastBid = "Waiting for the next lot";
+    html += '<div class="bidder' + (low ? " low" : "") + '"><div class="bname"><span class="dot" style="background:' + a.color + '"></span>' + esc(a.name) + "</div>" +
+      '<div class="bstyle">' + esc(a.style) + "</div>" +
+      '<div class="bbudget">' + (bal == null ? "—" : fmt(bal) + " coins") + (low ? " · nearly empty" : "") + "</div>" +
+      '<div class="blast">' + esc(lastBid) + "</div></div>";
+  });
+  var lot = currentLotCache;
+  var youLast = "";
+  if (player.accountId) {
+    if (lot && lot.current_bidder === player.accountId) youLast = "Last bid: " + fmt(lot.current_bid) + " — you are leading";
+    else if (lot && myBidAuctions[lot.auction_id]) youLast = "You bid on this lot — outbid for now";
+    else if (lot) youLast = "Your paddle is down — tap Bid to join in";
+    else youLast = "Waiting for the next lot";
+  } else {
+    youLast = "Take your seat to bid";
+  }
+  html += '<div class="bidder you"><div class="bname"><span class="dot" style="background:#2e9e6b"></span>' + esc(player.name || "You") + "</div>" +
+    '<div class="bstyle">You — front row, right side</div>' +
+    '<div class="bbudget">' + (player.balance == null ? "—" : fmt(player.balance) + " coins") + "</div>" +
+    '<div class="blast">' + esc(youLast) + "</div></div>";
+  holder.innerHTML = html;
+}
+function shareInfo(goodId) {
+  var s = state.shares[goodId];
+  if (!s) return { total: 0, mine: 0 };
+  var mine = 0;
+  s.holders.forEach(function (h) { if (h.account === player.accountId) mine = h.shares; });
+  return { total: s.total_sold, mine: mine };
+}
+function renderMarket() {
+  var holder = el("market-grid");
+  if (!state.goods.length) { holder.innerHTML = "<p>Loading the goods…</p>"; return; }
+  var html = "";
+  state.goods.forEach(function (g) {
+    var hist = saleHistory(g.good_id);
+    var last = hist.length ? fmt(hist[0].current_bid) + " to " + displayName(hist[0].winner) : "Never sold";
+    var sh = shareInfo(g.good_id);
+    var mine = player.accountId && g.owner_id === player.accountId;
+    var listed = g.listed_price != null;
+    html += '<div class="good' + (mine ? " mine" : "") + '"><h3>' + esc(g.name) + "</h3>" +
+      '<div class="gmeta">' + esc(kindLabel(g.kind)) + " · earns " + fmt(g.income_per_day) + " coins a day · owned by " + esc(displayName(g.owner_id)) + "</div>" +
+      '<div class="gprice">Last sold: ' + esc(last) + "</div>" +
+      '<div class="gwhy">' + esc(whyText(g, listed ? g.listed_price : (hist.length ? hist[0].current_bid : null))) + "</div>" +
+      '<div class="gmeta">Shares: ' + sh.total + " of 10 sold · you hold " + sh.mine + " · a share earns a tenth of the daily income</div>" +
+      '<div class="gactions">' +
+      (listed && !mine ? '<button class="btn btn-gold" type="button" data-action="buy-good" data-good="' + esc(g.good_id) + '" data-price="' + esc(g.listed_price) + '">Buy now — ' + fmt(g.listed_price) + " coins</button>" : "") +
+      (listed && mine ? "<span class='note'>Listed at " + fmt(g.listed_price) + " coins</span>" : "") +
+      '<button class="btn btn-dark" type="button" data-action="buy-share" data-good="' + esc(g.good_id) + '">Buy a share — 100</button>' +
+      (sh.mine > 0 ? '<button class="btn btn-dark" type="button" data-action="sell-share" data-good="' + esc(g.good_id) + '">Sell a share — 100</button>' : "") +
+      "</div></div>";
+  });
+  holder.innerHTML = html;
+}
+function renderMine() {
+  var grid = el("mine-grid"), empty = el("mine-empty");
+  if (!player.accountId) { grid.innerHTML = ""; empty.hidden = false; return; }
+  var mine = state.goods.filter(function (g) { return g.owner_id === player.accountId; });
+  if (!mine.length) { grid.innerHTML = ""; empty.hidden = false; empty.innerHTML = "<p>No goods yet — win a lot and it will show here, earning coins every day.</p>"; return; }
+  empty.hidden = true;
+  var html = "";
+  mine.forEach(function (g) {
+    var sh = shareInfo(g.good_id);
+    html += '<div class="good mine"><h3>' + esc(g.name) + "</h3>" +
+      '<div class="gmeta">' + esc(kindLabel(g.kind)) + " · earns " + fmt(g.income_per_day) + " coins a day · income waiting: " + fmt(g.income_accrued) + " coins</div>" +
+      '<div class="gwhy">' + esc(whyText(g, null)) + "</div>" +
+      '<div class="gmeta">Shares sold: ' + sh.total + " of 10 · you keep the rest of the income</div>" +
+      '<div class="gactions">' +
+      '<button class="btn btn-gold" type="button" data-action="claim-income" data-good="' + esc(g.good_id) + '">Claim income</button>' +
+      (g.listed_price != null ? '<button class="btn btn-dark" type="button" data-action="delist" data-good="' + esc(g.good_id) + '">Take off the market</button>' : "") +
+      "</div>" +
+      '<div class="gactions"><input class="field" id="list-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Fixed price in coins" aria-label="Fixed price for ' + esc(g.name) + '" />' +
+      '<button class="btn btn-dark" type="button" data-action="list-good" data-good="' + esc(g.good_id) + '">List at this price</button></div>' +
+      '<div class="gactions"><input class="field" id="auc-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Opening bid in coins" aria-label="Opening bid for ' + esc(g.name) + '" />' +
+      '<button class="btn btn-dark" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>' +
+      "</div>";
+  });
+  grid.innerHTML = html;
+}
+
+function fmtCountdown(seconds) {
+  seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  var h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60);
+  if (h >= 24) return Math.floor(h / 24) + "d " + (h % 24) + "h";
+  if (h > 0) return h + "h " + (m < 10 ? "0" : "") + m + "m";
+  return m + "m";
+}
+
+function prizeSplit(pool, rank, count) {
+  if (count <= 0 || pool <= 0) return 0;
+  if (count === 1) return rank === 0 ? pool : 0;
+  if (count === 2) {
+    if (rank === 0) return Math.floor(pool * 60 / 100);
+    if (rank === 1) return pool - Math.floor(pool * 60 / 100);
+    return 0;
+  }
+  if (rank === 0) return pool - Math.floor(pool * 30 / 100) - Math.floor(pool * 20 / 100);
+  if (rank === 1) return Math.floor(pool * 30 / 100);
+  if (rank === 2) return Math.floor(pool * 20 / 100);
+  return 0;
+}
+
+function renderPrize() {
+  var body = el("prize-body");
+  if (!body) return;
+  var pool = state.prize || 0;
+  var season = state.season;
+  var board = state.board || [];
+  var html = "";
+  html += '<p style="font-size:22px;margin:6px 0 2px"><b>' + fmt(pool) + ' coins</b> in the prize pool</p>';
+  if (season) {
+    if (season.can_payout) {
+      html += '<p style="margin:4px 0">Season ' + season.season_number + ' has ended — the prize is paying out now.</p>';
+    } else {
+      html += '<p style="margin:4px 0">Season ' + season.season_number + ' ends in <b>' + esc(fmtCountdown(season.seconds_remaining)) + '</b>.</p>';
+    }
+  }
+  html += '<h3>Who leads this season</h3>';
+  if (!board.length) {
+    html += '<p class="muted">No one owns a good yet — win a lot and you will top this board. If no one owns a good when the season ends, the pool simply rolls over and keeps growing.</p>';
+  } else {
+    html += '<div class="bidders">';
+    board.slice(0, 3).forEach(function (row, i) {
+      var win = prizeSplit(pool, i, board.length);
+      html += '<div class="bidder"><div class="bname">' + (i + 1) + ". " + esc(displayName(row.account)) + '</div>' +
+        '<div class="bstyle">' + row.goods_owned + " good" + (row.goods_owned === 1 ? "" : "s") + " · earns " + fmt(row.income_per_day) + " coins a day</div>" +
+        '<div class="bbudget">Would take <b>' + fmt(win) + " coins</b> if the season ended now</div></div>";
+    });
+    html += "</div>";
+    if (board.length > 3) html += '<p class="muted">Plus ' + (board.length - 3) + ' more owner' + (board.length - 3 === 1 ? "" : "s") + ' below the top three.</p>';
+  }
+  var last = state.lastPayout;
+  if (last) {
+    html += "<h3>Last season's prize</h3>";
+    if (!last.winners || !last.winners.length) {
+      html += '<p class="muted">Season ' + last.season_number + ' ended with no one owning a good, so the pool rolled over.</p>';
+    } else {
+      html += "<p>";
+      last.winners.forEach(function (w, i) {
+        if (i) html += " · ";
+        html += esc(displayName(w.account)) + " took " + fmt(w.amount) + " coins";
+      });
+      html += " (season " + last.season_number + ").</p>";
+    }
+  }
+  body.innerHTML = html;
+}
+
+/* ================= Bidding — one tap, like raising a hand ================= */
+function setBidMsg(text, kind) {
+  var m = el("bid-msg");
+  m.textContent = text || "";
+  m.className = "bid-msg" + (kind ? " " + kind : "");
+}
+function nextBidAmount() {
+  var lot = currentLotCache;
+  if (!lot) return null;
+  return lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid) + MIN_INCREMENT;
+}
+function placeBid(amount) {
+  var lot = currentLotCache;
+  if (!lot) { setBidMsg("No lot is open right now — the next lot will appear on the podium.", "bad"); return; }
+  if (passedLotId === lot.auction_id) { setBidMsg("You are sitting this lot out. Tap “Jump back in” to bid again.", "bad"); return; }
+  amount = Math.floor(Number(amount));
+  var min = nextBidAmount();
+  if (!amount || amount < min) { setBidMsg("That bid is too low — the next step is " + fmt(min) + " coins.", "bad"); return; }
+  if (!player.accountId) { setBidMsg("Take your seat first — pick a display name above and you can bid in seconds.", "bad"); el("seat-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  if (player.balance != null && amount > player.balance) { setBidMsg("You hold " + fmt(player.balance) + " coins — that bid is more than you have. Claim your free chips first.", "bad"); return; }
+  /* Immediate feedback: your paddle goes up NOW, before the move is recorded. */
+  figureRaise("__you", 3000);
+  showBubble("You", (player.name || "You") + " — " + fmt(amount), 4200);
+  sound.bid();
+  setBidMsg("Your paddle is up — " + fmt(amount) + " coins…", "");
+  el("btn-bid").disabled = true;
+  myBidAuctions[lot.auction_id] = true;
+  signedCall("place_bid", { auction_id: lot.auction_id, amount: String(amount) }).then(function () {
+    setBidMsg("Your bid of " + fmt(amount) + " coins is in — you are the highest bidder.", "ok");
+    el("btn-bid").disabled = false;
+    poll();
+  }, function () {
+    setBidMsg("That bid did not land. Check your coins and try again.", "bad");
+    el("btn-bid").disabled = false;
+    poll();
+  });
+}
+function doAction(method, args, okText, btn) {
+  if (!player.accountId) { setBidMsg("Take your seat first — pick a display name above.", "bad"); return; }
+  if (btn) btn.disabled = true;
+  signedCall(method, args).then(function () {
+    setBidMsg(okText, "ok");
+    if (btn) btn.disabled = false;
+    poll();
+  }, function () {
+    setBidMsg("That did not go through. Check your connection and try again.", "bad");
+    if (btn) btn.disabled = false;
+  });
+}
+
+/* ================= Simulation — a week in a minute ================= */
+var simRunning = false;
+function simRand(seed) {
+  var s = seed;
+  return function () { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+}
+function runSimulation() {
+  if (simRunning) return;
+  if (!state.goods.length) { el("sim-log").innerHTML = "<p>The goods are still loading — try again in a moment.</p>"; return; }
+  simRunning = true;
+  var btn = el("btn-sim"); btn.disabled = true; btn.textContent = "The week is unfolding…";
+  var log = el("sim-log"); log.innerHTML = "";
+  var rnd = simRand(Date.now() % 100000);
+  var goods = state.goods.map(function (g) { return { id: g.good_id, name: g.name, kind: g.kind, income: Number(g.income_per_day) || 0, owner: "The House" }; });
+  var purse = { Mara: 3000, Bram: 2500, Pip: 1200, You: player.balance || 500 };
+  var lines = [];
+  function add(html, cls) { lines.push({ html: html, cls: cls || "line" }); }
+  add("<b>Simulation — practice only.</b> Seven days of auctions, built from the live goods and the three regulars' real habits. Nothing here is real.", "line");
+  var dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  for (var d = 0; d < 7; d++) {
+    add(dayNames[d] + " — day " + (d + 1), "day");
+    var order = goods.slice().sort(function () { return rnd() - 0.5; });
+    var lotsToday = order.slice(0, 2 + Math.floor(rnd() * 2));
+    lotsToday.forEach(function (good) {
+      var start = Math.max(50, Math.round(good.income * (1.2 + rnd() * 1.2) / 25) * 25);
+      var price = start, leader = null, bids = 0;
+      var bidders = ["Mara", "Bram", "Pip"].slice().sort(function () { return rnd() - 0.5; });
+      for (var round = 0; round < 6 && bids < 9; round++) {
+        for (var bi = 0; bi < bidders.length; bi++) {
+          var who = bidders[bi];
+          var step = who === "Mara" ? 50 + Math.floor(rnd() * 3) * 25 : 25;
+          if (who === "Bram" && round < 2 && rnd() < 0.6) continue; /* Bram waits */
+          if (who === "Pip" && price + step > purse.Pip * 0.8) continue; /* Pip spends carefully */
+          var next = price + step;
+          if (next > purse[who]) continue;
+          price = next; leader = who; bids++;
+          if (who === "Mara" && rnd() < 0.5) { price += 25; bids++; }
+        }
+      }
+      if (!leader) { add("· " + good.name + " opened at " + fmt(start) + " — no bids. It goes back on the shelf."); return; }
+      purse[leader] -= price;
+      var prevOwner = good.owner;
+      good.owner = leader;
+      var pb = Math.max(1, Math.ceil(price / good.income));
+      add("· <b>" + good.name + "</b> (" + kindLabel(good.kind) + ", earns " + fmt(good.income) + "/day) — " + bids + " bids, sold to <b>" + leader + "</b> for <b>" + fmt(price) + "</b> coins. Pays for itself in about " + pb + " days. " + (prevOwner === "The House" ? "First sale." : "Was " + prevOwner + "'s."));
+    });
+    var earned = {};
+    goods.forEach(function (g) { if (g.owner !== "The House") earned[g.owner] = (earned[g.owner] || 0) + g.income; });
+    var parts = [];
+    Object.keys(earned).forEach(function (o) { parts.push(o + " +" + fmt(earned[o])); });
+    if (parts.length) add("Overnight income: " + parts.join(" · ") + ".");
+  }
+  add("End of the week — who owns what", "day");
+  goods.forEach(function (g) { add("· <b>" + g.name + "</b> — " + g.owner + ", earning " + fmt(g.income) + " a day."); });
+  var total = 0;
+  goods.forEach(function (g) { if (g.owner !== "The House") total += g.income; });
+  add("Daily income now flowing to bidders: <b>" + fmt(total) + " coins a day</b>. In the real room, that income is yours to claim every day you hold a good.", "line");
+  add("<b>End of simulation.</b> Nothing moved, nothing was spent — the real room is untouched.", "line");
+  var i = 0;
+  (function step() {
+    if (i >= lines.length) { simRunning = false; btn.disabled = false; btn.textContent = "Watch a week of auctions unfold"; return; }
+    var div = document.createElement("div");
+    div.className = lines[i].cls;
+    div.innerHTML = lines[i].html;
+    log.appendChild(div);
+    i++;
+    setTimeout(step, lines[i - 1].cls === "day" ? 650 : 480);
+  })();
+}
+
+/* ================= Wiring + boot ================= */
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach(function (t) { t.classList.toggle("active", t.dataset.tab === name); });
+  document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("active", p.id === "panel-" + name); });
+}
+function showSeated() {
+  el("seat-form").hidden = true;
+  el("seat-done").hidden = false;
+  el("seat-name-v").textContent = player.name || "You";
+  el("seat-title").textContent = "You are seated";
+}
+function takeSeat() {
+  var name = (el("inp-name").value || "").trim();
+  if (name.length < 2) { el("seat-msg").textContent = "Pick a display name of at least 2 letters."; return; }
+  player.name = name;
+  storeSet("gavelName", name);
+  var msg = el("seat-msg");
+  msg.textContent = "Setting up your seat… this takes a few seconds.";
+  el("btn-seat").disabled = true;
+  ensureSeat().then(function () {
+    showSeated();
+    msg.textContent = "";
+    setBidMsg("You are seated, " + name + ". Claim your free chips, then raise your paddle.", "ok");
+    poll();
+  }, function () {
+    msg.textContent = "Your seat could not be set up. Check your connection and try again.";
+    el("btn-seat").disabled = false;
+  });
+}
+function boot() {
+  /* sound toggle (persisted, on by default). UI only here — no audio
+     starts before the first tap; the gesture handler unlocks it. */
+  (function () {
+    var sb = el("btn-sound");
+    sb.textContent = sound.on ? "🔔" : "🔇";
+    sb.setAttribute("aria-pressed", String(!sound.on));
+    sb.setAttribute("aria-label", sound.on ? "Turn sound off" : "Turn sound on");
+  })();
+  el("btn-sound").addEventListener("click", function () {
+    sound.unlocked = true;
+    sound.setOn(!sound.on);
+    if (sound.on) { sound.ensure(); sound.startMurmur(); sound.bid(); }
+  });
+  armAudioOnGesture();
+  /* room */
+  try { initRoom(); } catch (e) { el("room-status").textContent = "The 3D room could not start on this device."; }
+  /* tabs */
+  document.querySelectorAll(".tab").forEach(function (t) {
+    t.addEventListener("click", function () { switchTab(t.dataset.tab); });
+  });
+  /* seat */
+  if (player.name) { el("inp-name").value = player.name; }
+  el("btn-seat").addEventListener("click", takeSeat);
+  el("inp-name").addEventListener("keydown", function (e) { if (e.key === "Enter") takeSeat(); });
+  var savedAccount = player.name ? storeGet("gavelAccount:" + player.name) : null;
+  if (player.name && savedAccount) {
+    player.accountId = savedAccount;
+    showSeated();
+    ensureSeat().then(function () { poll(); }, function () {});
+  }
+  /* bidding — one tap, like raising a hand */
+  el("btn-bid").addEventListener("click", function () {
+    var custom = el("inp-bid").value.trim();
+    if (custom) { placeBid(custom); el("inp-bid").value = ""; }
+    else placeBid(nextBidAmount());
+  });
+  el("inp-bid").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { placeBid(el("inp-bid").value.trim()); el("inp-bid").value = ""; }
+  });
+  document.querySelectorAll("[data-raise]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var lot = currentLotCache;
+      if (!lot) { setBidMsg("No lot is open right now.", "bad"); return; }
+      var base = lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid);
+      placeBid(base + Number(b.dataset.raise));
+    });
+  });
+  el("btn-pass").addEventListener("click", function () {
+    var lot = currentLotCache;
+    if (!lot) return;
+    if (passedLotId === lot.auction_id) {
+      passedLotId = null;
+      setBidMsg("You are back in for this lot — raise your paddle when you are ready.", "ok");
+      renderHud(lot);
+    } else {
+      passedLotId = lot.auction_id;
+      setBidMsg("You are sitting this lot out. Watch the room — the next lot is yours.", "");
+      renderHud(lot);
+    }
+  });
+  /* chips */
+  el("btn-chips").addEventListener("click", function () {
+    if (!player.accountId) { setBidMsg("Take your seat first — pick a display name above and you can claim chips in seconds.", "bad"); el("seat-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    var btn = el("btn-chips");
+    btn.disabled = true;
+    btn.textContent = "Claiming…";
+    signedCall("claim_faucet", {}).then(function () {
+      setBidMsg("500 free chips are yours. Raise your paddle!", "ok");
+      sound.win();
+      setTimeout(poll, 1200);
+      poll();
+    }, function () {
+      setBidMsg("Those chips could not be claimed — you may have claimed them already today.", "bad");
+      btn.disabled = false;
+      poll();
+    });
+  });
+  /* market + mine actions (event delegation — panels re-render every poll) */
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-action]");
+    if (!t) return;
+    var good = t.dataset.good;
+    if (t.dataset.action === "buy-good") doAction("buy_good", { good_id: good }, "You bought it — it is yours now.", t);
+    else if (t.dataset.action === "buy-share") doAction("buy_share", { good_id: good }, "You own a share — a tenth of its daily income is yours.", t);
+    else if (t.dataset.action === "sell-share") doAction("sell_share", { good_id: good }, "Share sold back for 100 coins.", t);
+    else if (t.dataset.action === "claim-income") doAction("claim_income", { good_id: good }, "Income claimed — it is in your coins now.", t);
+    else if (t.dataset.action === "delist") doAction("delist_good", { good_id: good }, "Taken off the market.", t);
+    else if (t.dataset.action === "list-good") {
+      var price = Math.floor(Number((el("list-" + good) || {}).value || 0));
+      if (!price || price < 1) { setBidMsg("Set a fixed price first.", "bad"); return; }
+      doAction("list_good", { good_id: good, price: String(price) }, "Listed at " + fmt(price) + " coins.", t);
+    } else if (t.dataset.action === "open-auction") {
+      var start = Math.floor(Number((el("auc-" + good) || {}).value || 0));
+      if (!start || start < 1) { setBidMsg("Set an opening bid first.", "bad"); return; }
+      doAction("open_auction", { good_id: good, starting_bid: String(start), duration_seconds: 600 }, "Your good is on the podium for 10 minutes.", t);
+    }
+  });
+  /* simulation */
+  el("btn-sim").addEventListener("click", runSimulation);
+  /* live polling — every 4 seconds, plus a fast first load */
+  poll();
+  pollTimer = setInterval(poll, 4000);
+  setBidMsg("", "");
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
+</script>
+</body>
+</html>

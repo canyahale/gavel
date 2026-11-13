@@ -1,0 +1,14 @@
+# Keys and secrets — never commit.
+.testnet-accounts.json
+*.json
+!package.json
+!tsconfig.json
+node_modules/
+target/
+.env
+.env.*
+*.pem
+*.key
+# Logs — never commit.
+bot.log
+*.log
