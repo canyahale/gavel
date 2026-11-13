@@ -42,7 +42,7 @@ h1.wordmark span{color:#e6b84e}
 .note{font-size:.9rem;color:#cbb391}
 /* ---- The room ---- */
 .room-wrap{position:relative;border-radius:18px;overflow:hidden;border:2px solid #6b4a26;background:#1a0f08;box-shadow:0 18px 40px rgba(0,0,0,.5)}
-#gl{position:relative;width:100%;height:56vh;min-height:340px;max-height:560px}
+#gl{position:relative;width:100%;height:72vh;min-height:420px;max-height:720px}
 #gl canvas{display:block;width:100%!important;height:100%!important}
 .hud{position:absolute;pointer-events:none;z-index:5}
 .hud-lot{top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
@@ -136,7 +136,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   .hud-box .why{font-size:.8rem}
   .hud-bid{max-width:42%}
   .bid-big{font-size:1.6rem}
-  #gl{height:52vh;min-height:320px}
+  #gl{height:72vh;min-height:420px}
   .sold-banner .sold-big{font-size:1.7rem}
 }
 </style>
@@ -150,23 +150,6 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   <span class="pill" id="pill-pool">Prize pool: <b id="pill-pool-v">—</b></span>
   <button class="icon-btn" id="btn-sound" type="button" aria-pressed="false" aria-label="Turn sound off" title="Sound">🔔</button>
 </header>
-
-<!-- Sign-in / seat -->
-<section class="card" id="seat-card" style="margin-top:0">
-  <h2 id="seat-title">Take your seat</h2>
-  <p class="muted" id="seat-text">Pick a display name and take your seat in the room. Your account is made right here in your browser, and your key never leaves this device. You can watch the room without taking a seat, but you need a seat to claim chips and bid.</p>
-  <div id="seat-form">
-    <div class="inline-field">
-      <input class="field" id="inp-name" type="text" maxlength="24" placeholder="Your display name, e.g. Ada" autocomplete="nickname" />
-      <button class="btn btn-gold" id="btn-seat" type="button">Take your seat</button>
-    </div>
-    <p class="note" id="seat-msg" aria-live="polite"></p>
-  </div>
-  <div id="seat-done" hidden>
-    <p style="font-weight:800;margin:4px 0">You are seated as <span id="seat-name-v"></span>.</p>
-    <p class="muted" style="margin:0">Your seat is saved on this device. Come back any time and you are still seated.</p>
-  </div>
-</section>
 
 <!-- The 3D room -->
 <section class="room-wrap" aria-label="The auction room">
@@ -194,6 +177,23 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   <div class="seat-tag" id="seat-tag">Your seat is at the front — the view from where you sit</div>
   <div class="room-status">
     <span class="status-line"><span class="live-dot"></span><span id="room-status">Connecting to the room…</span></span>
+  </div>
+</section>
+
+<!-- Sign-in / seat -->
+<section class="card" id="seat-card" style="margin-top:0">
+  <h2 id="seat-title">Take your seat</h2>
+  <p class="muted" id="seat-text">Pick a display name and take your seat in the room. Your seat is made right here in your browser and never leaves this device. You can watch the room without taking a seat, but you need a seat to claim chips and bid.</p>
+  <div id="seat-form">
+    <div class="inline-field">
+      <input class="field" id="inp-name" type="text" maxlength="24" placeholder="Your display name, e.g. Ada" autocomplete="nickname" />
+      <button class="btn btn-gold" id="btn-seat" type="button">Take your seat</button>
+    </div>
+    <p class="note" id="seat-msg" aria-live="polite"></p>
+  </div>
+  <div id="seat-done" hidden>
+    <p style="font-weight:800;margin:4px 0">You are seated as <span id="seat-name-v"></span>.</p>
+    <p class="muted" style="margin:0">Your seat is saved on this device. Come back any time and you are still seated.</p>
   </div>
 </section>
 
@@ -871,13 +871,15 @@ function initRoom() {
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x140d07);
   scene.fog = new THREE.FogExp2(0x140d07, 0.015);
-  var camera = new THREE.PerspectiveCamera(70, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 60);
-  camera.position.set(0, 2.0, 7.3);
-  camera.lookAt(0, 1.15, -5);
+  var camera = new THREE.PerspectiveCamera(52, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 80);
+  camera.position.set(0, 3.2, 10.0);
+  camera.lookAt(0, 1.0, -2);
   room.quality = detectQuality();
   var renderer = new THREE.WebGLRenderer({ antialias: room.quality !== "low", powerPreference: "high-performance" });
   renderer.setPixelRatio(room.quality === "high" ? Math.min(window.devicePixelRatio || 1, 2) : room.quality === "medium" ? Math.min(window.devicePixelRatio || 1, 1.5) : 1);
   renderer.setSize(holder.clientWidth, holder.clientHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
   renderer.shadowMap.enabled = room.quality !== "low";
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   holder.appendChild(renderer.domElement);
@@ -921,6 +923,12 @@ function initRoom() {
   var lotGlow = new THREE.PointLight(0xffd98a, 1.6, 8);
   lotGlow.position.set(0, 2.6, -3.6); scene.add(lotGlow);
   var fill = new THREE.PointLight(0xffe9c4, 0.6, 13);
+  /* wall accent lights: a warm row along the back wall for depth (v2 reference) — droppable on low-end */
+  for (var wi = -4; wi <= 4; wi++) {
+    var wl = new THREE.PointLight(0xffd8a0, 1.6, 5.5);
+    wl.position.set(wi * 2.4, 4.3, -8.7);
+    scene.add(wl); room.extraLights.push(wl);
+  }
   fill.position.set(-4, 2.5, 4); scene.add(fill);
   /* evening light through the windows (left wall) — droppable on low-end */
   var windowLight = new THREE.SpotLight(0xffc27a, 1.4, 22, 0.8, 0.6, 1);
