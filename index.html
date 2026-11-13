@@ -821,6 +821,50 @@ function makeLotMesh(kind) {
   }
   return g;
 }
+/* ---- Quality: one room, two budgets ----
+   High-end gets the full treatment (shadows, all lights, dust, full pixel
+   ratio). Low-end gets the same room with the expensive parts turned down.
+   Detection runs before the renderer is created; a frame-rate monitor then
+   drops the quality a tier if the device cannot hold it, so a phone that
+   starts too high settles itself down instead of stuttering. */
+function detectQuality() {
+  var cores = navigator.hardwareConcurrency || 4;
+  var mem = navigator.deviceMemory || 4;
+  var isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || "");
+  if (cores <= 2 || mem <= 2) return "low";
+  if (isMobile) return "medium";
+  return "high";
+}
+function applyQuality(level) {
+  if (!room.renderer) return;
+  room.quality = level;
+  var r = room.renderer;
+  if (level === "high") {
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    r.shadowMap.enabled = true;
+    if (room.keyLight) room.keyLight.castShadow = true;
+  } else if (level === "medium") {
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    r.shadowMap.enabled = true;
+    if (room.keyLight) { room.keyLight.castShadow = true; room.keyLight.shadow.mapSize.set(512, 512); }
+  } else {
+    r.setPixelRatio(1);
+    r.shadowMap.enabled = false;
+    if (room.keyLight) room.keyLight.castShadow = false;
+  }
+  /* materials must recompile when shadows are toggled */
+  if (room.scene) room.scene.traverse(function (o) { if (o.material) o.material.needsUpdate = true; });
+  var low = level === "low";
+  /* The feel stays the same on every tier. What changes is only the
+     expensive rendering: shadows, pixel ratio, and the extra lights.
+     The warm key lights, the fog, the glowing chandelier crystals, the
+     lit lot board, the evening windows and the dust all stay on — they
+     are cheap, and they are what make the room feel real. */
+  (room.extraLights || []).forEach(function (l) { l.visible = !low; });
+  var holder = el("gl");
+  if (holder) r.setSize(holder.clientWidth, holder.clientHeight);
+}
+
 function initRoom() {
   if (!window.THREE) { el("room-status").textContent = "The 3D room could not load — check your connection and reload."; return; }
   var holder = el("gl");
@@ -830,12 +874,14 @@ function initRoom() {
   var camera = new THREE.PerspectiveCamera(70, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 60);
   camera.position.set(0, 2.0, 7.3);
   camera.lookAt(0, 1.15, -5);
-  var renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  room.quality = detectQuality();
+  var renderer = new THREE.WebGLRenderer({ antialias: room.quality !== "low", powerPreference: "high-performance" });
+  renderer.setPixelRatio(room.quality === "high" ? Math.min(window.devicePixelRatio || 1, 2) : room.quality === "medium" ? Math.min(window.devicePixelRatio || 1, 1.5) : 1);
   renderer.setSize(holder.clientWidth, holder.clientHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = room.quality !== "low";
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   holder.appendChild(renderer.domElement);
+  room.extraLights = []; room.shafts = [];
   /* ---- Materials: PBR, warm and expensive ---- */
   var M = {
     mahogany: new THREE.MeshStandardMaterial({ color: 0x4a2c17, roughness: 0.55, metalness: 0.05 }),
@@ -867,21 +913,24 @@ function initRoom() {
   scene.add(new THREE.AmbientLight(0xffdfb0, 0.9));
   var key = new THREE.SpotLight(0xffd9a0, 2.2, 26, 0.62, 0.55, 1);
   key.position.set(0, 6.4, -1.5); key.target.position.set(0, 1.1, -5.2);
-  key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.002;
+  key.castShadow = room.quality !== "low"; key.shadow.mapSize.set(room.quality === "high" ? 1024 : 512, room.quality === "high" ? 1024 : 512); key.shadow.bias = -0.002;
   scene.add(key); scene.add(key.target);
+  room.keyLight = key;
   var warm = new THREE.PointLight(0xffb36b, 1.25, 15);
   warm.position.set(0, 3.4, 2); scene.add(warm);
   var lotGlow = new THREE.PointLight(0xffd98a, 1.6, 8);
   lotGlow.position.set(0, 2.6, -3.6); scene.add(lotGlow);
   var fill = new THREE.PointLight(0xffe9c4, 0.6, 13);
   fill.position.set(-4, 2.5, 4); scene.add(fill);
-  /* evening light through the windows (left wall) */
+  /* evening light through the windows (left wall) — droppable on low-end */
   var windowLight = new THREE.SpotLight(0xffc27a, 1.4, 22, 0.8, 0.6, 1);
   windowLight.position.set(-8.5, 4.5, 0); windowLight.target.position.set(0, 0.8, -1);
   scene.add(windowLight); scene.add(windowLight.target);
-  /* rim light from behind the front row */
+  room.extraLights.push(windowLight);
+  /* rim light from behind the front row — droppable on low-end */
   var rim = new THREE.DirectionalLight(0xffc98a, 0.6);
   rim.position.set(0, 3.5, 8); scene.add(rim);
+  room.extraLights.push(rim);
   /* ---- Floor: polished dark hardwood + deep red velvet runner with gold border ---- */
   var floor = new THREE.Mesh(new THREE.PlaneGeometry(26, 20), M.floorWood);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -1);
@@ -950,6 +999,7 @@ function initRoom() {
     }
     var glow = new THREE.PointLight(0xffd27a, 1.1, 11);
     glow.position.set(0, -0.3, 0); g.add(glow);
+    room.extraLights.push(glow); /* droppable on low-end — the crystals still glow */
     g.position.set(x, 5.6, z); scene.add(g);
   }
   chandelier(0, -2.5);
@@ -978,9 +1028,11 @@ function initRoom() {
     /* pelmet */
     box(2.9, 0.28, 0.3, M.velvet, 0, 2.1, 0.2, g);
     g.position.set(-9.35, 3.6, z); g.rotation.y = Math.PI / 2; scene.add(g);
-    /* light shaft: soft translucent beam into the room */
+    /* light shaft: soft translucent beam into the room (cheap, and it is
+       what makes the evening light feel real — stays on at every quality) */
     var shaft = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 6.5), new THREE.MeshBasicMaterial({ color: 0xffb45e, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     shaft.position.set(-6.5, 2.2, z); shaft.rotation.z = 0.9; shaft.rotation.y = Math.PI / 2; scene.add(shaft);
+    room.shafts.push(shaft);
   }
   windowUnit(-3.5);
   windowUnit(2.5);
@@ -1231,6 +1283,18 @@ function animateRoom() {
   requestAnimationFrame(animateRoom);
   var dt = Math.min(0.05, room.clock.getDelta());
   var t = room.clock.elapsedTime;
+  /* frame-rate monitor: if the device cannot hold ~25fps, drop a quality
+     tier so it settles instead of stuttering. One drop per tier, no bounce. */
+  if (room.quality) {
+    room.fpsAcc = (room.fpsAcc || 0) + dt;
+    room.fpsN = (room.fpsN || 0) + 1;
+    if (room.fpsAcc >= 3) {
+      var fps = room.fpsN / room.fpsAcc;
+      room.fpsAcc = 0; room.fpsN = 0;
+      if (fps < 25 && room.quality === "high") applyQuality("medium");
+      else if (fps < 25 && room.quality === "medium") applyQuality("low");
+    }
+  }
   if (room.lotGroup && room.lotGroup.children.length) room.lotGroup.rotation.y += dt * 0.7;
   /* dust motes drift slowly in the warm light */
   if (room.dust) {
