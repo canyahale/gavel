@@ -66,6 +66,9 @@ h1.wordmark span{color:#e6b84e}
 .sold-banner .sold-big{font-family:"Marcellus",Georgia,serif;font-size:2.2rem;line-height:1}
 .sold-banner .sold-who{font-weight:800;margin-top:6px}
 .bubble{position:absolute;z-index:6;transform:translate(-50%,-100%);background:#fff8e6;color:#231a04;border:2px solid #e6b84e;border-radius:14px;padding:6px 11px;font-weight:800;font-size:.92rem;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.45);pointer-events:none}
+.face{position:absolute;z-index:5;transform:translate(-50%,-100%);text-align:center;pointer-events:none}
+.face img{width:48px;height:48px;display:block;margin:0 auto}
+.face span{display:inline-block;background:rgba(20,11,6,.88);color:#f7e3ac;border:1px solid #e6b84e;border-radius:10px;padding:2px 9px;font-weight:800;font-size:.8rem;white-space:nowrap}
 .bubble:after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:#e6b84e;border-bottom:0}
 .bubble[hidden]{display:none}
 .seat-tag{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);z-index:4;background:rgba(20,11,6,.65);border:1px solid rgba(230,184,78,.35);color:#e8d9bd;border-radius:999px;padding:3px 10px;font-size:.72rem;font-weight:700;pointer-events:none;max-width:250px;text-align:center;line-height:1.3}
@@ -187,6 +190,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
     <div id="sold-price" style="font-weight:800"></div>
   </div>
   <div id="bubbles"></div>
+  <div id="faces"></div>
   <div class="seat-tag" id="seat-tag">Your seat is at the front — the view from where you sit</div>
   <div class="room-status">
     <span class="status-line"><span class="live-dot"></span><span id="room-status">Connecting to the room…</span></span>
@@ -273,7 +277,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   <div class="sim-log" id="sim-log" aria-live="polite"></div>
 </section>
 
-<footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
+<footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.<br>Character faces: Animated Noto Emoji by Google, CC BY 4.0.</footer>
 </main>
 <script>
 "use strict";
@@ -547,7 +551,7 @@ function accountIdFor(kp) {
 function createAccount(accountId, publicKeyString, attempt) {
   attempt = attempt || 1;
   function retry() {
-    if (attempt >= 3) return Promise.resolve(null);
+    if (attempt >= 5) return Promise.resolve(null);
     return new Promise(function (res) { setTimeout(res, 1500 * attempt); }).then(function () { return createAccount(accountId, publicKeyString, attempt + 1); });
   }
   return fetch(HELPER_URL, {
@@ -580,7 +584,7 @@ function ensureSeat() {
     var info = await viewAccount(accountId);
     if (!info) {
       await createAccount(accountId, kp.getPublicKey().toString());
-      info = await waitForAccount(accountId, 15);
+      info = await waitForAccount(accountId, 25);
     }
     if (!info) throw new Error("Your seat could not be set up. Check your connection and try again.");
     var keyStore = new nearApi.keyStores.InMemoryKeyStore();
@@ -609,6 +613,47 @@ function signedCall(method, args) {
 var room = { renderer: null, scene: null, camera: null, clock: null, figures: {}, gavel: null, gavelBase: 0, lotGroup: null, lotKind: null, auctioneerArm: null, strikeT: -1, ready: false };
 var bubbles = {}; /* name -> {el, figure, until} */
 
+/* ---- Animated faces: Google's Animated Noto Emoji, free under CC BY 4.0 ----
+   Each bidder gets a real animated character face that reacts to the game.
+   Credit: "Animated Noto Emoji by Google, CC BY 4.0" (see the footer). */
+var faces = {}; /* key -> {el, img, figure, until} */
+var faceBase = {}; /* key -> "idle" | "broke" */
+var FACE_EMOJI = {
+  Mara: { idle: "1f642", bidding: "1f624", winning: "1f911", losing: "1f624", broke: "1f630" },
+  Bram: { idle: "1f914", bidding: "1f642", winning: "1f60c", losing: "1f630", broke: "1f622" },
+  Pip: { idle: "1f630", bidding: "1f605", winning: "1f389", losing: "1f622", broke: "1f62d" },
+  You: { idle: "1f642", bidding: "1f624", winning: "1f911", losing: "1f622", broke: "1f630" }
+};
+function faceUrl(cp) { return "https://fonts.gstatic.com/s/e/notoemoji/latest/" + cp + "/512.webp"; }
+function ensureFace(key, label) {
+  var f = faces[key];
+  if (f) { if (label) f.el.querySelector("span").textContent = label; return f; }
+  var holder = el("faces");
+  if (!holder) return null;
+  var div = document.createElement("div");
+  div.className = "face";
+  var img = document.createElement("img");
+  img.alt = label || key;
+  var span = document.createElement("span");
+  span.textContent = label || key;
+  div.appendChild(img); div.appendChild(span);
+  holder.appendChild(div);
+  var fig = room.figures[key] || room.figures.__you;
+  f = faces[key] = { el: div, img: img, figure: fig, until: 0 };
+  faceBase[key] = faceBase[key] || "idle";
+  setFace(key, faceBase[key]);
+  return f;
+}
+function setFace(key, mood, ms) {
+  var f = ensureFace(key);
+  if (!f) return;
+  var map = FACE_EMOJI[key] || FACE_EMOJI.You;
+  var url = faceUrl(map[mood] || map.idle);
+  if (f.img.getAttribute("src") !== url) f.img.setAttribute("src", url);
+  f.until = ms ? Date.now() + ms : 0;
+  if (ms) setTimeout(function () { if (Date.now() >= (f.until || 0)) setFace(key, faceBase[key] || "idle"); }, ms);
+}
+
 function makeLabelSprite(text, color) {
   var c = document.createElement("canvas"); c.width = 256; c.height = 72;
   var g = c.getContext("2d");
@@ -620,46 +665,118 @@ function makeLabelSprite(text, color) {
   var tex = new THREE.CanvasTexture(c);
   var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
   var spr = new THREE.Sprite(mat);
-  spr.scale.set(1.5, 0.42, 1);
+  spr.scale.set(1.05, 0.30, 1);
   return spr;
 }
+/* ---- Seated humanoid: proper proportions, jacket + shirt, hair, legs and
+   feet on the floor, arms that bend at the elbow. opts: skin, hair,
+   hairStyle ("long"|"short"|"cap"), jacket, shirt, trousers, build (width). ---- */
 function makeFigure(colorHex, name, opts) {
   opts = opts || {};
   var group = new THREE.Group();
-  var bodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
-  var skinMat = new THREE.MeshLambertMaterial({ color: 0xe8b98a });
+  var jacketMat = new THREE.MeshLambertMaterial({ color: opts.jacket || colorHex });
+  var shirtMat = new THREE.MeshLambertMaterial({ color: opts.shirt || 0xf7e3ac });
+  var skinMat = new THREE.MeshLambertMaterial({ color: opts.skin || 0xe8b98a });
+  var hairMat = new THREE.MeshLambertMaterial({ color: opts.hair || 0x2a1a10 });
+  var trouserMat = new THREE.MeshLambertMaterial({ color: opts.trousers || 0x2a2a30 });
   var darkMat = new THREE.MeshLambertMaterial({ color: 0x2a1a10 });
+  var shoeMat = new THREE.MeshLambertMaterial({ color: 0x1c1c22 });
+  var build = opts.build || 1;
+  function box(w, h, d, mat, x, y, z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z); group.add(m); return m;
+  }
+  function cyl(rt, rb, h, mat, x, y, z, seg) {
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 12), mat);
+    m.position.set(x, y, z); group.add(m); return m;
+  }
+  function sph(r, mat, x, y, z, sx, sy, sz) {
+    var m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 12), mat);
+    m.position.set(x, y, z); if (sx) m.scale.set(sx, sy, sz); group.add(m); return m;
+  }
   /* chair */
   var chairMat = new THREE.MeshLambertMaterial({ color: 0x5a2e1a });
-  var seat = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.1, 0.55), chairMat);
-  seat.position.y = 0.45; group.add(seat);
-  var back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.7, 0.08), chairMat);
-  back.position.set(0, 0.85, 0.26); group.add(back);
-  var legL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.45, 0.07), darkMat);
-  legL.position.set(-0.25, 0.22, -0.2); group.add(legL);
-  var legR = legL.clone(); legR.position.x = 0.25; group.add(legR);
-  /* body + head */
-  var body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.62, 10), bodyMat);
-  body.position.y = 0.82; group.add(body);
-  var head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), skinMat);
-  head.position.y = 1.28; group.add(head);
-  var hat = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.22, 10), new THREE.MeshLambertMaterial({ color: colorHex }));
-  hat.position.y = 1.44; group.add(hat);
-  /* right arm + paddle (pivot at shoulder) */
-  var armPivot = new THREE.Group();
-  armPivot.position.set(0.24, 1.05, 0);
-  var arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), bodyMat);
-  arm.position.y = -0.18; armPivot.add(arm);
+  box(0.66, 0.1, 0.55, chairMat, 0, 0.45, 0);
+  box(0.66, 0.72, 0.08, chairMat, 0, 0.86, 0.27);
+  box(0.07, 0.45, 0.07, darkMat, -0.27, 0.22, -0.2);
+  box(0.07, 0.45, 0.07, darkMat, 0.27, 0.22, -0.2);
+  box(0.07, 0.45, 0.07, darkMat, -0.27, 0.22, 0.2);
+  box(0.07, 0.45, 0.07, darkMat, 0.27, 0.22, 0.2);
+  /* legs — seated: thighs forward, calves down, feet flat on the floor */
+  [-1, 1].forEach(function (s) {
+    box(0.16, 0.15, 0.44, trouserMat, s * 0.12, 0.50, 0.24); /* thigh */
+    box(0.13, 0.44, 0.13, trouserMat, s * 0.12, 0.27, 0.45); /* calf */
+    box(0.14, 0.07, 0.26, shoeMat, s * 0.12, 0.035, 0.53); /* shoe */
+  });
+  /* pelvis + torso (jacket) + shirt front */
+  box(0.40 * build, 0.16, 0.30, trouserMat, 0, 0.56, 0.02);
+  var torso = cyl(0.20 * build, 0.24 * build, 0.58, jacketMat, 0, 0.88, 0, 14);
+  box(0.15 * build, 0.42, 0.03, shirtMat, 0, 0.90, 0.20 * build);
+  box(0.07, 0.05, 0.03, shirtMat, -0.05, 1.12, 0.20 * build); /* collar L */
+  box(0.07, 0.05, 0.03, shirtMat, 0.05, 1.12, 0.20 * build); /* collar R */
+  /* neck + head (pivot so the head can turn, nod and bow) */
+  cyl(0.06, 0.07, 0.10, skinMat, 0, 1.18, 0, 10);
+  var headPivot = new THREE.Group();
+  headPivot.position.set(0, 1.20, 0);
+  group.add(headPivot);
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 16, 14), skinMat);
+  head.position.y = 0.12; headPivot.add(head);
+  [-1, 1].forEach(function (s) {
+    var ear = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), skinMat);
+    ear.position.set(s * 0.15, 0.12, 0); headPivot.add(ear);
+  });
+  var style = opts.hairStyle || "short";
+  if (style === "long") {
+    var hm = new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 12), hairMat);
+    hm.position.set(0, 0.16, -0.03); hm.scale.set(1, 0.95, 1.05); headPivot.add(hm);
+    var back = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.08), hairMat);
+    back.position.set(0, -0.06, -0.13); headPivot.add(back);
+  } else if (style === "cap") {
+    var cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.17, 0.06, 14), hairMat);
+    cap.position.set(0, 0.25, 0); headPivot.add(cap);
+    var brim = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.02, 0.12), hairMat);
+    brim.position.set(0, 0.23, 0.14); headPivot.add(brim);
+    var under = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), hairMat);
+    under.position.set(0, 0.20, -0.02); under.scale.set(1, 0.5, 1); headPivot.add(under);
+  } else { /* short, neat */
+    var top = new THREE.Mesh(new THREE.SphereGeometry(0.158, 14, 12), hairMat);
+    top.position.set(0, 0.19, -0.02); top.scale.set(1, 0.55, 1); headPivot.add(top);
+  }
+  /* arms: shoulder pivot + elbow pivot, so they bend and raise naturally */
+  function makeArm(side) { /* side: +1 right (paddle), -1 left */
+    var pivot = new THREE.Group();
+    pivot.position.set(side * 0.26 * build, 1.06, 0);
+    group.add(pivot);
+    var upper = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.30, 10), jacketMat);
+    upper.position.y = -0.15; pivot.add(upper);
+    var elbow = new THREE.Group();
+    elbow.position.y = -0.30; pivot.add(elbow);
+    var fore = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.048, 0.28, 10), jacketMat);
+    fore.position.y = -0.14; elbow.add(fore);
+    var hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMat);
+    hand.position.y = -0.30; elbow.add(hand);
+    return { pivot: pivot, elbow: elbow, hand: hand };
+  }
+  var armR = makeArm(1);
+  var armL = makeArm(-1);
+  /* paddle in the right hand */
   var paddle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, 0.03), new THREE.MeshLambertMaterial({ color: 0xf7e3ac }));
-  paddle.position.y = -0.48; armPivot.add(paddle);
-  armPivot.rotation.z = 0.25; /* resting, paddle down at side */
-  group.add(armPivot);
-  /* left arm resting */
-  var armL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.4, 0.09), bodyMat);
-  armL.position.set(-0.26, 0.85, 0); armL.rotation.z = 0.3; group.add(armL);
+  paddle.position.y = -0.40; armR.elbow.add(paddle);
+  /* rest pose: right arm hangs at the side, paddle down; left forearm rests on the lap */
+  armR.pivot.rotation.z = 0.12;
+  armR.elbow.rotation.x = -0.25;
+  armL.pivot.rotation.z = -0.15;
+  armL.elbow.rotation.x = -1.15;
   var label = makeLabelSprite(name, "#" + ("000000" + colorHex.toString(16)).slice(-6));
   label.position.y = 1.78; group.add(label);
-  group.userData = { armPivot: armPivot, body: body, head: head, label: label, raise: 0, raiseTarget: 0, lean: 0, leanTarget: 0, hop: 0, hopT: -1, slump: 0, slumpTarget: 0, dim: false, swayPhase: Math.random() * 6.28, baseY: 0 };
+  group.userData = {
+    armPivot: armR.pivot, elbowR: armR.elbow, armPivotL: armL.pivot, elbowL: armL.elbow,
+    headPivot: headPivot, torso: torso, body: torso, head: head, label: label,
+    raise: 0, raiseTarget: 0, lean: 0, leanTarget: 0, hop: 0, hopT: -1,
+    slump: 0, slumpTarget: 0, dim: false, clapT: -1, checkT: -1, checkNext: 6 + Math.random() * 10,
+    headYaw: 0, headYawTarget: 0, headYawNext: 2 + Math.random() * 4,
+    swayPhase: Math.random() * 6.28, breathPhase: Math.random() * 6.28, baseY: 0
+  };
   return group;
 }
 function makeLotMesh(kind) {
@@ -700,31 +817,35 @@ function initRoom() {
   if (!window.THREE) { el("room-status").textContent = "The 3D room could not load — check your connection and reload."; return; }
   var holder = el("gl");
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a0f08);
-  scene.fog = new THREE.Fog(0x1a0f08, 12, 26);
-  var camera = new THREE.PerspectiveCamera(68, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 60);
-  camera.position.set(0, 1.9, 6.8);
+  scene.background = new THREE.Color(0x241708);
+  scene.fog = new THREE.Fog(0x241708, 12, 26);
+  var camera = new THREE.PerspectiveCamera(70, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 60);
+  camera.position.set(0, 2.0, 7.3);
   camera.lookAt(0, 1.15, -5);
   var renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(holder.clientWidth, holder.clientHeight);
   holder.appendChild(renderer.domElement);
-  scene.add(new THREE.AmbientLight(0xffe0b3, 0.8));
+  scene.add(new THREE.AmbientLight(0xffe0b3, 1.05));
   var spot = new THREE.SpotLight(0xffd98a, 1.4, 22, 0.7, 0.5, 1);
   spot.position.set(0, 6, -1); spot.target.position.set(0, 1, -5.5);
   scene.add(spot); scene.add(spot.target);
-  var warm = new THREE.PointLight(0xffb36b, 0.9, 14);
+  var warm = new THREE.PointLight(0xffb36b, 1.15, 14);
   warm.position.set(0, 3.2, 2); scene.add(warm);
   var podiumLight = new THREE.PointLight(0xffd98a, 0.9, 9);
   podiumLight.position.set(0, 3.4, -3.4); scene.add(podiumLight);
-  var fill = new THREE.PointLight(0xffe9c4, 0.35, 12);
+  var fill = new THREE.PointLight(0xffe9c4, 0.5, 12);
   fill.position.set(-4, 2.5, 4); scene.add(fill);
+  /* rim light from behind the front row, so the bidders' shoulders and hair
+     catch a warm edge against the dark room */
+  var rim = new THREE.DirectionalLight(0xffc98a, 0.55);
+  rim.position.set(0, 3.5, 8); scene.add(rim);
   /* floor, carpet, walls */
-  var floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 18), new THREE.MeshLambertMaterial({ color: 0x7d4f2e }));
+  var floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 18), new THREE.MeshLambertMaterial({ color: 0x8a5a35 }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -1); scene.add(floor);
   var carpet = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 12), new THREE.MeshLambertMaterial({ color: 0x7e1f1a }));
   carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.01, -1); scene.add(carpet);
-  var wallMat = new THREE.MeshLambertMaterial({ color: 0x54331e });
+  var wallMat = new THREE.MeshLambertMaterial({ color: 0x6b4226 });
   var backWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 7), wallMat);
   backWall.position.set(0, 3.5, -7.5); scene.add(backWall);
   var sideL = new THREE.Mesh(new THREE.PlaneGeometry(18, 7), wallMat);
@@ -775,26 +896,35 @@ function initRoom() {
   room.lotGroup.position.set(0, 0.91, -3.6);
   room.lotGroup.scale.set(1.7, 1.7, 1.7);
   scene.add(room.lotGroup);
-  /* bidders: Mara left, Bram centre, Pip right — front row, facing the podium */
+  /* bidders: Mara left, Pip left-centre, Bram right-centre — front row, facing the podium.
+     Spread wide so their name faces never overlap on a phone. Each one is
+     built differently: body, hair, jacket and skin all distinct. */
   var spots = [
-    { name: "Mara", x: -1.95, z: 2.8, color: 0xe0533d },
-    { name: "Bram", x: 1.95, z: 2.8, color: 0x4a7fd4 },
-    { name: "Pip", x: -1.15, z: 3.6, color: 0xd9a62e }
+    { name: "Mara", x: -2.3, z: 2.7, color: 0xe0533d, opts: { jacket: 0x7e1f1a, shirt: 0xf7e3ac, skin: 0xc98a5e, hair: 0x1c1210, hairStyle: "long", trousers: 0x2a2a30, build: 1.08 } },
+    { name: "Pip", x: -0.8, z: 3.4, color: 0xd9a62e, opts: { jacket: 0x8a6d2a, shirt: 0xe8d9bd, skin: 0xe8b98a, hair: 0x5a3a1a, hairStyle: "cap", trousers: 0x3a3230, build: 0.92 } },
+    { name: "Bram", x: 0.8, z: 3.4, color: 0x4a7fd4, opts: { jacket: 0x2a3a5a, shirt: 0xdfe8f2, skin: 0xd9a986, hair: 0x8a8a8a, hairStyle: "short", trousers: 0x22242c, build: 1.0 } }
   ];
   spots.forEach(function (s) {
-    var f = makeFigure(s.color, s.name);
+    var f = makeFigure(s.color, s.name, s.opts);
     f.position.set(s.x, 0, s.z);
     f.rotation.y = Math.PI; /* face the podium (away from camera) */
+    f.scale.set(1.3, 1.3, 1.3);
+    f.userData.label.visible = false; /* the animated face above carries the name */
     scene.add(f);
     room.figures[s.name] = f;
   });
   /* the player's own figure — front row, right side, seen over the shoulder,
      so your own paddle raise is visible in the room */
-  var you = makeFigure(0x2e9e6b, player.name || "You");
-  you.position.set(1.15, 0, 3.6);
+  var you = makeFigure(0x2e9e6b, player.name || "You", { jacket: 0x2e7d5b, shirt: 0xf7e3ac, skin: 0xdbab7e, hair: 0x2a1a10, hairStyle: "short", trousers: 0x2a2a30, build: 1.0 });
+  you.position.set(2.3, 0, 2.7);
   you.rotation.y = Math.PI - 0.35;
+  you.scale.set(1.3, 1.3, 1.3);
+  you.userData.label.visible = false;
   scene.add(you);
   room.figures.__you = you;
+  /* animated faces (Google's Animated Noto Emoji) above each bidder */
+  ["Mara", "Pip", "Bram"].forEach(function (n) { ensureFace(n, n); });
+  ensureFace("You", player.name || "You");
   /* a few extra faces in the side rows, for a full room */
   [[-4.6, 1.2, 0x7a5a8a], [4.8, 1.0, 0x8a6f5a], [-4.9, 4.8, 0x5a7a6b], [5.0, 4.9, 0x6b5a7a]].forEach(function (a) {
     var f = makeFigure(a[2], "");
@@ -824,21 +954,28 @@ function setLotMesh(kind) {
 function figureRaise(name, ms) {
   var f = room.figures[name]; if (!f) return;
   f.userData.raiseTarget = 1; f.userData.leanTarget = 0.25;
+  setFace(name, "bidding", ms || 2600);
   setTimeout(function () { f.userData.raiseTarget = 0; f.userData.leanTarget = 0; }, ms || 2600);
 }
 function figureHop(name) {
   var f = room.figures[name]; if (!f) return;
   f.userData.hopT = 0;
+  f.userData.clapT = 0; /* cheer: both hands come up and clap */
+  setFace(name, "winning", 3000);
 }
 function figureSlump(name) {
   var f = room.figures[name]; if (!f) return;
   f.userData.slumpTarget = 1;
+  setFace(name, "losing", 3500);
   setTimeout(function () { f.userData.slumpTarget = 0; }, 3500);
 }
 function figureLowBudget(name, low) {
   var f = room.figures[name]; if (!f) return;
   f.userData.dim = !!low;
   f.userData.slumpTarget = low ? 0.45 : 0;
+  faceBase[name] = low ? "broke" : "idle";
+  var fc = faces[name];
+  if (fc && Date.now() >= (fc.until || 0)) setFace(name, faceBase[name]);
 }
 function strikeGavel() {
   if (room.ready) room.strikeT = 0;
@@ -878,12 +1015,49 @@ function animateRoom() {
   }
   Object.keys(room.figures).forEach(function (key) {
     var f = room.figures[key], u = f.userData;
-    /* paddle raise + lean */
+    if (!u.armPivot || !u.headPivot) return;
+    /* eased pose weights */
     u.raise += (u.raiseTarget - u.raise) * Math.min(1, dt * 10);
     u.lean += (u.leanTarget - u.lean) * Math.min(1, dt * 8);
     u.slump += (u.slumpTarget - u.slump) * Math.min(1, dt * 5);
-    u.armPivot.rotation.z = 0.25 - u.raise * 2.5;
-    u.armPivot.rotation.x = -u.raise * 0.9;
+    /* clap + cheer on a win — both arms come up and meet, a few beats */
+    var clap = 0, clapOsc = 0;
+    if (u.clapT >= 0) {
+      u.clapT += dt;
+      if (u.clapT < 1.6) { clap = 1 - u.clapT / 1.6; clapOsc = Math.sin(u.clapT * 22) * 0.18 * clap; }
+      else u.clapT = -1;
+    }
+    /* checking a watch / phone — left arm comes up, head dips to look */
+    var check = 0;
+    if (u.checkT >= 0) {
+      u.checkT += dt;
+      if (u.checkT < 2.2) check = u.checkT < 0.4 ? u.checkT / 0.4 : (u.checkT > 1.8 ? (2.2 - u.checkT) / 0.4 : 1);
+      else u.checkT = -1;
+    } else if (t > (u.checkNext || 0)) {
+      u.checkNext = t + 12 + Math.random() * 14;
+      u.checkT = 0;
+    }
+    /* looking around the room — ease between glances */
+    if (t > (u.headYawNext || 0)) {
+      u.headYawNext = t + 3 + Math.random() * 4;
+      u.headYawTarget = (Math.random() - 0.5) * 0.9;
+    }
+    u.headYaw += (u.headYawTarget - u.headYaw) * Math.min(1, dt * 3);
+    /* breathing — chest rises and falls */
+    var breath = Math.sin(t * 1.3 + u.breathPhase) * 0.018;
+    if (u.torso) { u.torso.scale.y = 1 + breath; u.torso.scale.x = 1 + breath * 0.5; u.torso.scale.z = 1 + breath * 0.5; }
+    /* arms: raise the paddle to bid, clap to cheer, lift the wrist to check */
+    var r = u.raise, c = clap;
+    u.armPivot.rotation.x = -r * 2.1 - c * 1.3;
+    u.armPivot.rotation.z = 0.12 - r * 0.4 - c * 0.5 + clapOsc;
+    u.elbowR.rotation.x = -0.25 - r * 0.6 - c * 0.9;
+    u.armPivotL.rotation.x = -c * 1.3 - check * 0.9;
+    u.armPivotL.rotation.z = -0.15 + c * 0.5 - check * 0.25;
+    u.elbowL.rotation.x = -1.15 + c * 0.9 - check * 0.5;
+    /* head: glance around, tip back as you lean in, bow when outbid, dip to the wrist */
+    u.headPivot.rotation.y = u.headYaw;
+    u.headPivot.rotation.x = u.slump * 0.45 + check * 0.35 - u.lean * 0.15;
+    /* lean + slump */
     f.rotation.x = u.lean * 0.22 + u.slump * 0.3;
     /* hop on a win */
     if (u.hopT >= 0) {
@@ -913,6 +1087,18 @@ function animateRoom() {
     b.el.hidden = false;
     b.el.style.left = ((v.x * 0.5 + 0.5) * w) + "px";
     b.el.style.top = ((-v.y * 0.5 + 0.5) * h) + "px";
+  });
+  /* project the animated faces onto the screen, just above each bidder's head */
+  Object.keys(faces).forEach(function (key) {
+    var fc = faces[key];
+    if (!fc.figure || !room.camera) { fc.el.style.display = "none"; return; }
+    v.setFromMatrixPosition(fc.figure.matrixWorld);
+    v.y += 1.8;
+    v.project(room.camera);
+    if (v.z > 1) { fc.el.style.display = "none"; return; }
+    fc.el.style.display = "block";
+    fc.el.style.left = ((v.x * 0.5 + 0.5) * w) + "px";
+    fc.el.style.top = ((-v.y * 0.5 + 0.5) * h) + "px";
   });
   room.renderer.render(room.scene, room.camera);
 }
@@ -1332,6 +1518,8 @@ function renderPrize() {
       });
       html += " (season " + last.season_number + ").</p>";
     }
+  } else {
+    html += '<p class="muted">No season has ended yet — the first prize pays out when this season ends.</p>';
   }
   body.innerHTML = html;
 }
@@ -1472,6 +1660,7 @@ function takeSeat() {
   if (name.length < 2) { el("seat-msg").textContent = "Pick a display name of at least 2 letters."; return; }
   player.name = name;
   storeSet("gavelName", name);
+  ensureFace("You", name);
   var msg = el("seat-msg");
   msg.textContent = "Setting up your seat… this takes a few seconds.";
   el("btn-seat").disabled = true;
@@ -1481,7 +1670,7 @@ function takeSeat() {
     setBidMsg("You are seated, " + name + ". Claim your free chips, then raise your paddle.", "ok");
     poll();
   }, function () {
-    msg.textContent = "Your seat could not be set up. Check your connection and try again.";
+    msg.textContent = "Your seat could not be set up — the room could not make your account. Check your connection and tap again.";
     el("btn-seat").disabled = false;
   });
 }
@@ -1558,7 +1747,7 @@ function boot() {
       setTimeout(poll, 1200);
       poll();
     }, function () {
-      setBidMsg("Those chips could not be claimed — you may have claimed them already today.", "bad");
+      setBidMsg("Those chips could not be claimed. If your seat is new, wait a few seconds and tap again — if it keeps failing, take your seat again above.", "bad");
       btn.disabled = false;
       poll();
     });
