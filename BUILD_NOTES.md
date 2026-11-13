@@ -36,6 +36,22 @@ The only things NOT to decide alone: do not submit to the hackathon API (needs h
 - README: ~/workspace/gavel/README.md
 - .gitignore: ~/workspace/gavel/.gitignore (keys never committed)
 
+## Room redesigned — 2026-11-13 ~23:30 WAT (Isaiah's brief: Sotheby's / Christie's private sales room)
+The plain room is gone. Full rebuild of the 3D room in `index.html`:
+- **Walls:** dark mahogany paneling with raised panels, wainscot, and gold crown molding + gold trim strips.
+- **Floor:** polished dark hardwood (low-roughness PBR, plank seams) with a deep red velvet carpet runner and gold border strips, leading to the stage.
+- **Ceiling:** dark walnut with gold trim, soft recessed warm lights, and two brass chandeliers (crystal drops, warm glow).
+- **Windows:** two tall arched windows on the left wall with heavy dark-red curtains (slightly open), warm evening light, and soft translucent light shafts. A tall gold-framed mirror on the right wall.
+- **Stage:** raised dais with two wide steps covered in deep red velvet with gold nosing; polished mahogany auctioneer's desk with brass trim, leather top, and a brass nameplate; the lot on a marble-topped walnut pedestal inside a glass display case with a brass base and top.
+- **Lot board:** a dark board with a gold frame behind the podium, showing the live lot name and current bid (canvas texture, updated on every lot change).
+- **Tables:** a small mahogany table with a brass number plate and a water glass in front of each front-row seat, plus small tables for the background seats.
+- **Chairs:** dark leather seat + back on a wooden frame, now with armrests.
+- **Seating:** front row (Mara, Pip, Bram, You) plus a second arc of eight background bidders at the sides with their own tables, so the room reads as a gentle semi-circle of two rows. Rows behind the player are behind the camera, so the arc is at the sides.
+- **Lighting:** warm cinematic ~3000K — a shadow-casting key spotlight on the stage, warm fill, a spotlight for the lot, evening window light, rim light behind the front row, and chandelier glow. Fog softened (exp2 0.015) so the stage stays clear. Dust motes (140 points) drift in the light.
+- **Materials:** PBR (MeshStandardMaterial) for the room — wood, gold/brass, velvet, leather, marble, glass. Characters stay Lambert for performance. Light count kept low (8 lights, one shadow caster) so it runs on a phone.
+- **Honest limits (Everest's view, given to Isaiah):** the room is held at stylised realism to match the characters (true photorealism would make the stylised bidders look like cartoons in a real room); and the light/polygon budget is protected for his phone.
+- Verified headless (390x844): no page errors, faces load, no overlaps, pool 670, lot live (Corner Stall).
+
 ## Characters rebuilt — 2026-11-13 ~23:20 WAT (Isaiah: "This is too poor")
 The room looked poor on his phone: name labels overlapped (MaraPip, Bram behind You), the figures were tiny plain cones, the room was dark and bare, and all three bidders were nearly broke (Mara 399, Bram 459, Pip 83). Fixed in one pass:
 - **Reference images first, for consistency.** Four stylised-realism portraits generated (same warm room, same render style) and locked as the design: Mara (long dark hair, green eyes, gold hoops, deep red blazer), Bram (grey hair, navy suit, hands folded), Pip (flat cap, mustard cardigan, clutching his paddle), You (green quilted jacket, paddle up). Files in `reference/`. These are the design lock for the 3D characters.

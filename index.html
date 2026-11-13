@@ -694,14 +694,22 @@ function makeFigure(colorHex, name, opts) {
     var m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 12), mat);
     m.position.set(x, y, z); if (sx) m.scale.set(sx, sy, sz); group.add(m); return m;
   }
-  /* chair */
-  var chairMat = new THREE.MeshLambertMaterial({ color: 0x5a2e1a });
-  box(0.66, 0.1, 0.55, chairMat, 0, 0.45, 0);
-  box(0.66, 0.72, 0.08, chairMat, 0, 0.86, 0.27);
-  box(0.07, 0.45, 0.07, darkMat, -0.27, 0.22, -0.2);
-  box(0.07, 0.45, 0.07, darkMat, 0.27, 0.22, -0.2);
-  box(0.07, 0.45, 0.07, darkMat, -0.27, 0.22, 0.2);
-  box(0.07, 0.45, 0.07, darkMat, 0.27, 0.22, 0.2);
+  /* chair: dark leather seat + back on a wooden frame, with armrests */
+  var chairMat = new THREE.MeshLambertMaterial({ color: 0x241610 });
+  var chairFrame = new THREE.MeshLambertMaterial({ color: 0x3a2415 });
+  box(0.66, 0.12, 0.55, chairMat, 0, 0.46, 0); /* leather seat */
+  box(0.66, 0.74, 0.1, chairMat, 0, 0.88, 0.27); /* leather back */
+  box(0.7, 0.05, 0.06, chairFrame, 0, 1.26, 0.27); /* wood top rail */
+  /* armrests: leather pad on a wooden support, each side */
+  [-1, 1].forEach(function (s) {
+    box(0.07, 0.07, 0.5, chairMat, s * 0.36, 0.72, 0.02); /* armrest pad */
+    box(0.06, 0.22, 0.06, chairFrame, s * 0.36, 0.58, 0.22); /* front support */
+    box(0.06, 0.22, 0.06, chairFrame, s * 0.36, 0.58, -0.18); /* rear support */
+  });
+  box(0.07, 0.45, 0.07, chairFrame, -0.27, 0.22, -0.2);
+  box(0.07, 0.45, 0.07, chairFrame, 0.27, 0.22, -0.2);
+  box(0.07, 0.45, 0.07, chairFrame, -0.27, 0.22, 0.2);
+  box(0.07, 0.45, 0.07, chairFrame, 0.27, 0.22, 0.2);
   /* legs — seated: thighs forward, calves down, feet flat on the floor */
   [-1, 1].forEach(function (s) {
     box(0.16, 0.15, 0.44, trouserMat, s * 0.12, 0.50, 0.24); /* thigh */
@@ -817,50 +825,201 @@ function initRoom() {
   if (!window.THREE) { el("room-status").textContent = "The 3D room could not load — check your connection and reload."; return; }
   var holder = el("gl");
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x241708);
-  scene.fog = new THREE.Fog(0x241708, 12, 26);
+  scene.background = new THREE.Color(0x140d07);
+  scene.fog = new THREE.FogExp2(0x140d07, 0.015);
   var camera = new THREE.PerspectiveCamera(70, holder.clientWidth / Math.max(1, holder.clientHeight), 0.1, 60);
   camera.position.set(0, 2.0, 7.3);
   camera.lookAt(0, 1.15, -5);
   var renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(holder.clientWidth, holder.clientHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   holder.appendChild(renderer.domElement);
-  scene.add(new THREE.AmbientLight(0xffe0b3, 1.05));
-  var spot = new THREE.SpotLight(0xffd98a, 1.4, 22, 0.7, 0.5, 1);
-  spot.position.set(0, 6, -1); spot.target.position.set(0, 1, -5.5);
-  scene.add(spot); scene.add(spot.target);
-  var warm = new THREE.PointLight(0xffb36b, 1.15, 14);
-  warm.position.set(0, 3.2, 2); scene.add(warm);
-  var podiumLight = new THREE.PointLight(0xffd98a, 0.9, 9);
-  podiumLight.position.set(0, 3.4, -3.4); scene.add(podiumLight);
-  var fill = new THREE.PointLight(0xffe9c4, 0.5, 12);
+  /* ---- Materials: PBR, warm and expensive ---- */
+  var M = {
+    mahogany: new THREE.MeshStandardMaterial({ color: 0x4a2c17, roughness: 0.55, metalness: 0.05 }),
+    walnut: new THREE.MeshStandardMaterial({ color: 0x3a2415, roughness: 0.5, metalness: 0.05 }),
+    darkWood: new THREE.MeshStandardMaterial({ color: 0x2e1d12, roughness: 0.45, metalness: 0.08 }),
+    floorWood: new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.32, metalness: 0.12 }),
+    gold: new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.32, metalness: 0.9 }),
+    brass: new THREE.MeshStandardMaterial({ color: 0xa8823a, roughness: 0.4, metalness: 0.85 }),
+    velvet: new THREE.MeshStandardMaterial({ color: 0x6e1420, roughness: 0.95, metalness: 0 }),
+    leather: new THREE.MeshStandardMaterial({ color: 0x241610, roughness: 0.62, metalness: 0.05 }),
+    marble: new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.25, metalness: 0.05 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.22 }),
+    curtain: new THREE.MeshStandardMaterial({ color: 0x4a0f16, roughness: 0.95, metalness: 0 }),
+    cream: new THREE.MeshStandardMaterial({ color: 0xf7e3ac, roughness: 0.6, metalness: 0 })
+  };
+  function box(w, h, d, mat, x, y, z, parent) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z); (parent || scene).add(m); return m;
+  }
+  function cyl(rt, rb, h, mat, x, y, z, seg, parent) {
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 14), mat);
+    m.position.set(x, y, z); (parent || scene).add(m); return m;
+  }
+  function sph(r, mat, x, y, z, parent) {
+    var m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), mat);
+    m.position.set(x, y, z); (parent || scene).add(m); return m;
+  }
+  /* ---- Lighting: warm cinematic, ~3000K ---- */
+  scene.add(new THREE.AmbientLight(0xffdfb0, 0.9));
+  var key = new THREE.SpotLight(0xffd9a0, 2.2, 26, 0.62, 0.55, 1);
+  key.position.set(0, 6.4, -1.5); key.target.position.set(0, 1.1, -5.2);
+  key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.002;
+  scene.add(key); scene.add(key.target);
+  var warm = new THREE.PointLight(0xffb36b, 1.25, 15);
+  warm.position.set(0, 3.4, 2); scene.add(warm);
+  var lotGlow = new THREE.PointLight(0xffd98a, 1.6, 8);
+  lotGlow.position.set(0, 2.6, -3.6); scene.add(lotGlow);
+  var fill = new THREE.PointLight(0xffe9c4, 0.6, 13);
   fill.position.set(-4, 2.5, 4); scene.add(fill);
-  /* rim light from behind the front row, so the bidders' shoulders and hair
-     catch a warm edge against the dark room */
-  var rim = new THREE.DirectionalLight(0xffc98a, 0.55);
+  /* evening light through the windows (left wall) */
+  var windowLight = new THREE.SpotLight(0xffc27a, 1.4, 22, 0.8, 0.6, 1);
+  windowLight.position.set(-8.5, 4.5, 0); windowLight.target.position.set(0, 0.8, -1);
+  scene.add(windowLight); scene.add(windowLight.target);
+  /* rim light from behind the front row */
+  var rim = new THREE.DirectionalLight(0xffc98a, 0.6);
   rim.position.set(0, 3.5, 8); scene.add(rim);
-  /* floor, carpet, walls */
-  var floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 18), new THREE.MeshLambertMaterial({ color: 0x8a5a35 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -1); scene.add(floor);
-  var carpet = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 12), new THREE.MeshLambertMaterial({ color: 0x7e1f1a }));
-  carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.01, -1); scene.add(carpet);
-  var wallMat = new THREE.MeshLambertMaterial({ color: 0x6b4226 });
-  var backWall = new THREE.Mesh(new THREE.PlaneGeometry(24, 7), wallMat);
-  backWall.position.set(0, 3.5, -7.5); scene.add(backWall);
-  var sideL = new THREE.Mesh(new THREE.PlaneGeometry(18, 7), wallMat);
-  sideL.rotation.y = Math.PI / 2; sideL.position.set(-9, 3.5, -1); scene.add(sideL);
-  var sideR = sideL.clone(); sideR.rotation.y = -Math.PI / 2; sideR.position.x = 9; scene.add(sideR);
-  /* wall lamps */
-  [-5.5, -2.5, 2.5, 5.5].forEach(function (x) {
-    var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshLambertMaterial({ color: 0xffd98a, emissive: 0xaa7722 }));
-    lamp.position.set(x, 3.4, -7.3); scene.add(lamp);
+  /* ---- Floor: polished dark hardwood + deep red velvet runner with gold border ---- */
+  var floor = new THREE.Mesh(new THREE.PlaneGeometry(26, 20), M.floorWood);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -1);
+  floor.receiveShadow = true; scene.add(floor);
+  /* floor plank seams (subtle darker strips) */
+  for (var px = -11; px <= 11; px += 2) {
+    var seam = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 20), new THREE.MeshStandardMaterial({ color: 0x1c110a, roughness: 0.4 }));
+    seam.rotation.x = -Math.PI / 2; seam.position.set(px, 0.005, -1); scene.add(seam);
+  }
+  var carpet = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 13), M.velvet);
+  carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.012, -1);
+  carpet.receiveShadow = true; scene.add(carpet);
+  [-2.15, 2.15].forEach(function (x) {
+    var edge = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 13), M.gold);
+    edge.rotation.x = -Math.PI / 2; edge.position.set(x, 0.014, -1); scene.add(edge);
   });
-  /* podium + auctioneer */
-  var podium = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.0, 0.8), new THREE.MeshLambertMaterial({ color: 0x4a2c14 }));
-  podium.position.set(0, 0.5, -5.6); scene.add(podium);
-  var podiumTop = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 1.0), new THREE.MeshLambertMaterial({ color: 0xe6b84e }));
-  podiumTop.position.set(0, 1.04, -5.6); scene.add(podiumTop);
+  /* ---- Walls: mahogany paneling, wainscot, gold crown molding ---- */
+  function panelledWall(w, h, x, y, z, rotY) {
+    var g = new THREE.Group();
+    var base = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.mahogany);
+    g.add(base);
+    /* wainscot band */
+    box(w, 1.1, 0.06, M.walnut, 0, -h / 2 + 0.55, 0.04, g);
+    box(w, 0.07, 0.09, M.gold, 0, -h / 2 + 1.12, 0.05, g);
+    /* raised panels */
+    var n = Math.max(2, Math.floor(w / 3.2));
+    for (var i = 0; i < n; i++) {
+      var cx = -w / 2 + (i + 0.5) * (w / n);
+      box(w / n - 0.5, 3.4, 0.07, M.walnut, cx, 0.9, 0.05, g);
+      box(w / n - 0.7, 3.2, 0.04, M.gold, cx, 0.9, 0.09, g);
+      box(w / n - 0.9, 3.0, 0.04, M.walnut, cx, 0.9, 0.1, g);
+    }
+    /* crown molding */
+    box(w, 0.22, 0.12, M.darkWood, 0, h / 2 - 0.1, 0.06, g);
+    box(w, 0.06, 0.14, M.gold, 0, h / 2 - 0.24, 0.07, g);
+    g.position.set(x, y, z); g.rotation.y = rotY; scene.add(g);
+    return g;
+  }
+  panelledWall(26, 7.5, 0, 3.75, -7.5, 0);
+  panelledWall(20, 7.5, -9.5, 3.75, -1, Math.PI / 2);
+  panelledWall(20, 7.5, 9.5, 3.75, -1, -Math.PI / 2);
+  /* ---- Ceiling + recessed lights + chandeliers ---- */
+  var ceil = new THREE.Mesh(new THREE.PlaneGeometry(26, 20), M.walnut);
+  ceil.rotation.x = Math.PI / 2; ceil.position.set(0, 7.5, -1); scene.add(ceil);
+  box(26, 0.18, 0.3, M.gold, 0, 7.4, -7.4);
+  box(0.3, 0.18, 20, M.gold, -9.4, 7.4, -1);
+  box(0.3, 0.18, 20, M.gold, 9.4, 7.4, -1);
+  /* recessed ceiling lights (warm discs) */
+  [[-4, -4], [4, -4], [-4, 2], [4, 2], [0, -1]].forEach(function (p) {
+    var d = new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), new THREE.MeshStandardMaterial({ color: 0xffe6b0, emissive: 0xffc978, emissiveIntensity: 1.4 }));
+    d.rotation.x = Math.PI / 2; d.position.set(p[0], 7.45, p[1]); scene.add(d);
+  });
+  function chandelier(x, z) {
+    var g = new THREE.Group();
+    cyl(0.05, 0.05, 1.4, M.brass, 0, 0.7, 0, 8, g);
+    sph(0.12, M.gold, 0, 1.45, 0, g);
+    cyl(0.55, 0.42, 0.1, M.brass, 0, 0, 0, 14, g);
+    for (var i = 0; i < 6; i++) {
+      var a = (i / 6) * Math.PI * 2;
+      var ax = Math.cos(a) * 0.5, az = Math.sin(a) * 0.5;
+      var arm = box(0.05, 0.05, 0.5, M.brass, ax, 0.12, az, g);
+      arm.rotation.y = -a;
+      sph(0.07, new THREE.MeshStandardMaterial({ color: 0xffe9b0, emissive: 0xffd27a, emissiveIntensity: 1.6 }), ax * 1.25, 0.22, az * 1.25, g);
+      var drop = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffe9b0, emissiveIntensity: 0.7, roughness: 0.1, metalness: 0.2 }));
+      drop.position.set(ax * 0.9, -0.12, az * 0.9); g.add(drop);
+    }
+    var glow = new THREE.PointLight(0xffd27a, 1.1, 11);
+    glow.position.set(0, -0.3, 0); g.add(glow);
+    g.position.set(x, 5.6, z); scene.add(g);
+  }
+  chandelier(0, -2.5);
+  chandelier(0, 3.5);
+  /* ---- Windows (left wall): tall, arched, heavy curtains, evening light ---- */
+  function windowUnit(z) {
+    var g = new THREE.Group();
+    /* warm evening glass */
+    var glass = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 3.6), new THREE.MeshStandardMaterial({ color: 0xffb45e, emissive: 0xff9a3c, emissiveIntensity: 0.85, roughness: 0.4 }));
+    glass.position.set(0, 0, 0); g.add(glass);
+    /* arch top */
+    var arch = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.12, 20, 1, false, 0, Math.PI), M.darkWood);
+    arch.rotation.z = Math.PI / 2; arch.rotation.y = Math.PI / 2; arch.position.set(0, 1.8, 0); g.add(arch);
+    /* mullions */
+    box(0.07, 3.6, 0.06, M.darkWood, 0, 0, 0.03, g);
+    box(1.7, 0.07, 0.06, M.darkWood, 0, 0.6, 0.03, g);
+    box(1.7, 0.07, 0.06, M.darkWood, 0, -0.6, 0.03, g);
+    /* frame */
+    box(1.9, 0.1, 0.14, M.gold, 0, 1.85, 0.02, g);
+    box(1.9, 0.1, 0.14, M.gold, 0, -1.85, 0.02, g);
+    /* heavy curtains, slightly open */
+    [-1.15, 1.15].forEach(function (cx) {
+      var c = cyl(0.22, 0.3, 4.1, M.curtain, cx, 0, 0.22, 10, g);
+      c.scale.z = 0.6;
+    });
+    /* pelmet */
+    box(2.9, 0.28, 0.3, M.velvet, 0, 2.1, 0.2, g);
+    g.position.set(-9.35, 3.6, z); g.rotation.y = Math.PI / 2; scene.add(g);
+    /* light shaft: soft translucent beam into the room */
+    var shaft = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 6.5), new THREE.MeshBasicMaterial({ color: 0xffb45e, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    shaft.position.set(-6.5, 2.2, z); shaft.rotation.z = 0.9; shaft.rotation.y = Math.PI / 2; scene.add(shaft);
+  }
+  windowUnit(-3.5);
+  windowUnit(2.5);
+  /* right wall: one tall mirror in a gold frame (reflects the room's warmth) */
+  (function () {
+    var g = new THREE.Group();
+    box(2.0, 3.4, 0.1, M.gold, 0, 0, 0, g);
+    var mir = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 3.2), new THREE.MeshStandardMaterial({ color: 0x8a6f4a, roughness: 0.15, metalness: 0.9 }));
+    mir.position.set(0, 0, 0.06); g.add(mir);
+    g.position.set(9.35, 3.6, -1); g.rotation.y = -Math.PI / 2; scene.add(g);
+  })();
+  /* ---- Dais + auctioneer's desk + display case ---- */
+  /* raised dais, two wide steps covered in deep red velvet, gold nosing */
+  box(7.5, 0.18, 3.2, M.darkWood, 0, 0.09, -5.6);
+  box(7.5, 0.05, 3.2, M.velvet, 0, 0.2, -5.6);
+  box(7.5, 0.04, 0.08, M.gold, 0, 0.22, -4.05);
+  box(6.6, 0.18, 2.4, M.darkWood, 0, 0.3, -5.6);
+  box(6.6, 0.05, 2.4, M.velvet, 0, 0.41, -5.6);
+  box(6.6, 0.04, 0.08, M.gold, 0, 0.43, -4.45);
+  /* desk: mahogany, brass trim, leather top */
+  var desk = new THREE.Group();
+  box(2.2, 1.05, 0.9, M.mahogany, 0, 0.52, 0, desk);
+  box(2.24, 0.06, 0.94, M.gold, 0, 1.06, 0, desk);
+  box(2.0, 0.05, 0.8, M.leather, 0, 1.1, 0, desk);
+  box(1.9, 0.7, 0.04, M.walnut, 0, 0.55, 0.47, desk);
+  box(1.9, 0.05, 0.05, M.gold, 0, 0.92, 0.48, desk);
+  /* brass nameplate */
+  box(0.7, 0.16, 0.03, M.brass, 0, 0.78, 0.48, desk);
+  desk.position.set(0, 0.45, -6.0); scene.add(desk);
+  /* lot board: dark board with a gold frame behind the podium, live lot name + bid */
+  var boardCanvas = document.createElement("canvas");
+  boardCanvas.width = 512; boardCanvas.height = 160;
+  var boardTex = new THREE.CanvasTexture(boardCanvas);
+  var board = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.82), new THREE.MeshStandardMaterial({ map: boardTex, emissive: 0xffffff, emissiveMap: boardTex, emissiveIntensity: 0.85, roughness: 0.6 }));
+  board.position.set(0, 4.6, -7.42); scene.add(board);
+  box(2.8, 1.0, 0.08, M.gold, 0, 4.6, -7.46);
+  room.lotBoard = { canvas: boardCanvas, tex: boardTex };
+  updateLotBoard("The room is quiet", "");
+  /* auctioneer (kept, standing on the dais behind the desk) */
   var auc = new THREE.Group();
   var aucBody = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.85, 10), new THREE.MeshLambertMaterial({ color: 0x1c1c22 }));
   aucBody.position.y = 1.15; auc.add(aucBody);
@@ -873,29 +1032,66 @@ function initRoom() {
   var aucArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.1), new THREE.MeshLambertMaterial({ color: 0x1c1c22 }));
   aucArmMesh.position.y = -0.22; aucArm.add(aucArmMesh);
   aucArm.rotation.z = -0.5; auc.add(aucArm);
-  auc.position.set(0, 0.35, -6.1); auc.scale.set(1.15, 1.15, 1.15); scene.add(auc);
+  auc.position.set(0, 0.45, -6.4); auc.scale.set(1.15, 1.15, 1.15); scene.add(auc);
   room.auctioneerArm = aucArm;
-  /* the gavel on the podium */
+  /* the gavel on the desk */
   var gavel = new THREE.Group();
   var handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.55, 8), new THREE.MeshLambertMaterial({ color: 0x8a5a2a }));
   handle.rotation.z = Math.PI / 2; gavel.add(handle);
   var headG = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.3, 10), new THREE.MeshLambertMaterial({ color: 0x5a3418 }));
   headG.rotation.x = Math.PI / 2; headG.position.x = 0.3; gavel.add(headG);
-  gavel.position.set(0.45, 1.13, -5.5);
+  gavel.position.set(0.45, 1.2, -5.9);
   gavel.rotation.z = 0.35;
   scene.add(gavel);
   room.gavel = gavel; room.gavelBase = 0.35;
   var block = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.05, 12), new THREE.MeshLambertMaterial({ color: 0x7a4a22 }));
-  block.position.set(0.45, 1.10, -5.5); scene.add(block);
-  /* lot pedestal in front of the podium */
-  var ped = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 0.85, 12), new THREE.MeshLambertMaterial({ color: 0x3a2417 }));
-  ped.position.set(0, 0.42, -3.6); scene.add(ped);
-  var pedTop = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.06, 12), new THREE.MeshLambertMaterial({ color: 0xe6b84e }));
+  block.position.set(0.45, 1.16, -5.9); scene.add(block);
+  /* lot pedestal + glass display case in front of the podium */
+  var ped = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 0.85, 12), M.walnut);
+  ped.position.set(0, 0.42, -3.6); ped.castShadow = true; scene.add(ped);
+  var pedTop = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.06, 12), M.marble);
   pedTop.position.set(0, 0.88, -3.6); scene.add(pedTop);
+  /* glass case around the lot */
+  var caseGlass = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.05, 1.15), M.glass);
+  caseGlass.position.set(0, 1.45, -3.6); scene.add(caseGlass);
+  var caseBase = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 1.2), M.brass);
+  caseBase.position.set(0, 0.93, -3.6); scene.add(caseBase);
+  var caseTop = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 1.2), M.brass);
+  caseTop.position.set(0, 1.98, -3.6); scene.add(caseTop);
   room.lotGroup = new THREE.Group();
   room.lotGroup.position.set(0, 0.91, -3.6);
   room.lotGroup.scale.set(1.7, 1.7, 1.7);
   scene.add(room.lotGroup);
+  /* ---- Bidder tables: small mahogany tables in a gentle arc, one per front-row seat ---- */
+  [[-2.3, 1.35, 0.12], [-0.8, 1.9, 0.05], [0.8, 1.9, -0.05], [2.3, 1.35, -0.12]].forEach(function (t) {
+    var tb = new THREE.Group();
+    box(1.05, 0.06, 0.6, M.mahogany, 0, 0.72, 0, tb);
+    box(1.0, 0.04, 0.55, M.gold, 0, 0.76, 0, tb);
+    box(0.07, 0.72, 0.07, M.darkWood, -0.45, 0.36, -0.22, tb);
+    box(0.07, 0.72, 0.07, M.darkWood, 0.45, 0.36, -0.22, tb);
+    box(0.07, 0.72, 0.07, M.darkWood, -0.45, 0.36, 0.22, tb);
+    box(0.07, 0.72, 0.07, M.darkWood, 0.45, 0.36, 0.22, tb);
+    /* water glass + a small brass number plate */
+    cyl(0.045, 0.04, 0.12, M.glass, -0.3, 0.83, 0.1, 10, tb);
+    box(0.22, 0.14, 0.02, M.brass, 0.28, 0.83, 0.12, tb);
+    tb.position.set(t[0], 0, t[1]); tb.rotation.y = t[2];
+    tb.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(tb);
+  });
+  /* ---- Dust motes drifting in the warm light ---- */
+  (function () {
+    var n = 140, pos = new Float32Array(n * 3);
+    for (var i = 0; i < n; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 16;
+      pos[i * 3 + 1] = 0.5 + Math.random() * 6;
+      pos[i * 3 + 2] = -7 + Math.random() * 13;
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    var pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffd9a0, size: 0.035, transparent: true, opacity: 0.55, depthWrite: false }));
+    pts.name = "dust"; scene.add(pts);
+    room.dust = pts;
+  })();
   /* bidders: Mara left, Pip left-centre, Bram right-centre — front row, facing the podium.
      Spread wide so their name faces never overlap on a phone. Each one is
      built differently: body, hair, jacket and skin all distinct. */
@@ -925,13 +1121,33 @@ function initRoom() {
   /* animated faces (Google's Animated Noto Emoji) above each bidder */
   ["Mara", "Pip", "Bram"].forEach(function (n) { ensureFace(n, n); });
   ensureFace("You", player.name || "You");
-  /* a few extra faces in the side rows, for a full room */
-  [[-4.6, 1.2, 0x7a5a8a], [4.8, 1.0, 0x8a6f5a], [-4.9, 4.8, 0x5a7a6b], [5.0, 4.9, 0x6b5a7a]].forEach(function (a) {
-    var f = makeFigure(a[2], "");
-    f.position.set(a[0], 0, a[1]);
-    f.rotation.y = Math.PI + (Math.random() - 0.5) * 0.4;
+  /* the room wraps around: a second arc of background bidders at the sides,
+     with their own small tables, so the seating reads as a gentle semi-circle
+     of two rows rather than a single front row. Kept at the frame edges so
+     they never block the podium. */
+  var bgSeats = [
+    { x: -4.6, z: 1.2, c: 0x7a5a8a, rot: 0.5 }, { x: 4.8, z: 1.0, c: 0x8a6f5a, rot: -0.5 },
+    { x: -5.2, z: 2.6, c: 0x5a7a6b, rot: 0.7 }, { x: 5.2, z: 2.6, c: 0x6b5a7a, rot: -0.7 },
+    { x: -4.9, z: 4.8, c: 0x8a5a3a, rot: 0.9 }, { x: 5.0, z: 4.9, c: 0x3a5a7a, rot: -0.9 },
+    { x: -5.6, z: -0.6, c: 0x6b7a3a, rot: 0.4 }, { x: 5.6, z: -0.6, c: 0x7a3a5a, rot: -0.4 }
+  ];
+  bgSeats.forEach(function (s) {
+    var f = makeFigure(s.c, "");
+    f.position.set(s.x, 0, s.z);
+    f.rotation.y = Math.PI + s.rot;
     f.userData.label.visible = false;
     scene.add(f);
+    /* small table in front of each background seat */
+    var tb = new THREE.Group();
+    box(0.9, 0.05, 0.5, M.mahogany, 0, 0.7, 0, tb);
+    box(0.06, 0.7, 0.06, M.darkWood, -0.38, 0.35, -0.18, tb);
+    box(0.06, 0.7, 0.06, M.darkWood, 0.38, 0.35, -0.18, tb);
+    box(0.06, 0.7, 0.06, M.darkWood, -0.38, 0.35, 0.18, tb);
+    box(0.06, 0.7, 0.06, M.darkWood, 0.38, 0.35, 0.18, tb);
+    box(0.2, 0.12, 0.02, M.brass, 0.22, 0.8, 0.1, tb);
+    tb.position.set(s.x - Math.sin(s.rot) * 0.9, 0, s.z - Math.cos(s.rot) * 0.9);
+    tb.rotation.y = s.rot;
+    scene.add(tb);
   });
   room.renderer = renderer; room.scene = scene; room.camera = camera;
   room.clock = new THREE.Clock();
@@ -943,6 +1159,20 @@ function initRoom() {
     room.renderer.setSize(w, h);
   });
   animateRoom();
+}
+/* Lot board behind the podium: live lot name + current bid, drawn on a canvas. */
+function updateLotBoard(name, bidText) {
+  if (!room.lotBoard) return;
+  var c = room.lotBoard.canvas, g = c.getContext("2d");
+  g.fillStyle = "#1a120a"; g.fillRect(0, 0, 512, 160);
+  g.strokeStyle = "#c9a227"; g.lineWidth = 6; g.strokeRect(8, 8, 496, 144);
+  g.fillStyle = "#e6b84e"; g.font = "bold 26px Georgia, serif"; g.textAlign = "center";
+  g.fillText("NOW ON THE PODIUM", 256, 44);
+  g.fillStyle = "#f7e3ac"; g.font = "bold 40px Georgia, serif";
+  g.fillText((name || "").slice(0, 26), 256, 96);
+  g.fillStyle = "#cbb391"; g.font = "28px Georgia, serif";
+  g.fillText(bidText || "", 256, 136);
+  room.lotBoard.tex.needsUpdate = true;
 }
 function setLotMesh(kind) {
   if (!room.ready || room.lotKind === kind) return;
@@ -1002,6 +1232,11 @@ function animateRoom() {
   var dt = Math.min(0.05, room.clock.getDelta());
   var t = room.clock.elapsedTime;
   if (room.lotGroup && room.lotGroup.children.length) room.lotGroup.rotation.y += dt * 0.7;
+  /* dust motes drift slowly in the warm light */
+  if (room.dust) {
+    room.dust.rotation.y += dt * 0.008;
+    room.dust.position.y = Math.sin(t * 0.12) * 0.15;
+  }
   /* gavel strike animation */
   if (room.strikeT >= 0) {
     room.strikeT += dt;
@@ -1312,9 +1547,11 @@ function renderHud(lot) {
     if (next) {
       el("lot-why").textContent = "Coming up: " + next.name + " — earns " + fmt(next.income_per_day) + " coins a day. " + whyText(next, null);
       setLotMesh(next.kind);
+      updateLotBoard("Next: " + next.name, "Earns " + fmt(next.income_per_day) + " coins a day");
     } else {
       el("lot-why").textContent = "No lot is on the podium right now. The next lot is being prepared — it will appear here the moment it opens.";
       setLotMesh(null);
+      updateLotBoard("The room is quiet", "");
     }
     if (state.loaded && !state.open.length) el("room-status").textContent = "The room is quiet — the next lot is being prepared.";
     el("btn-bid").disabled = true;
@@ -1327,6 +1564,7 @@ function renderHud(lot) {
   el("lot-name").textContent = good.name;
   el("lot-why").textContent = whyText(good, lot.current_bid);
   setLotMesh(good.kind);
+  updateLotBoard(good.name, "Current bid: " + fmt(lot.current_bid) + " coins");
   bidBox.hidden = false;
   el("bid-big").textContent = fmt(lot.current_bid) + " coins";
   el("bid-who").textContent = lot.current_bidder ? "Leading: " + displayName(lot.current_bidder) + " · " + fmt(lot.bids_count) + " bid" + (lot.bids_count === 1 ? "" : "s") : "Opening price — no bids yet · be the first";
