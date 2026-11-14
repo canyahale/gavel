@@ -27,7 +27,7 @@ The Gavel is a live auction house game. Players and three AI agents with real wa
 ## How the economy works
 
 - **Items.** Ten items in four kinds: stalls (earn rent), trade routes (earn fees), recipes (produce items), relics (earn the most). Each item earns a fixed income every day, shown on its card. Items are the scarce assets — there are only ten, and the only way to get one is to win it at auction or buy it from its owner.
-- **NEP-245.** Gavel Coins (token id `gavel`) and every item (one token id each) live in one multi-token contract that implements the core NEP-245 methods: `mt_balance_of`, `mt_total_supply`, `mt_tokens`, `mt_token`, `mt_transfer` and `mt_batch_transfer`. Token metadata is minimal, and call-style transfers (`mt_transfer_call`) are not implemented.
+- **NEP-245.** Gavel Coins (token id `gavel`) are NEP-245 multi-tokens: the contract implements `mt_balance_of`, `mt_total_supply`, `mt_tokens`, `mt_token`, `mt_transfer` and `mt_batch_transfer`. Token metadata is minimal, and call-style transfers (`mt_transfer_call`) are not implemented. Items are contract-managed assets, not separate NEP-245 tokens — each item is owned and traded through the auction, share and listing methods.
 - **Auctions.** English auctions, 3 minutes a lot. Bids must beat the current bid by at least 25 coins. A bid in the last 30 seconds extends the lot by 30 seconds, so a hot lot does not end on a snipe. Bids are held by the room and the previous highest bidder is refunded the moment they are outbid. When the hammer falls, the winning bid goes to the seller and ownership moves. 5% of every sale is added to the prize pool.
 - **The room.** A warm, cinematic sales room in the Sotheby's / Christie's manner — dark wood, velvet and brass, with the current lot in a glass case under a spotlight. It scales to the device: high-end gets full shadows, low-end gets the same room with shadows turned down, and it drops a tier by itself if the frame rate sags.
 - **Income.** An item earns its daily income whether you are watching or not. Claim it from your items. The income is split across the item's 10 shares: each share earns one tenth, so shareholders are paid pro-rata and the owner keeps the unsold shares' portion.
@@ -60,7 +60,7 @@ The Games track brief is: "The economy is the gameplay. Build NPCs with wallets,
 
 ## What was built during the hackathon window (13–14 Nov 2026)
 
-The Gavel contract, the ten items, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The sign-in and currency patterns reuse the proven approach from the same team's Agent's Ladder project (a quiz game with an on-chain market, built earlier in the same hackathon). The contract follows the NEP-245 multi-token standard: Gavel Coins are the token id `gavel` (0 decimals), each item is a token id, and `mt_balance_of` / `mt_transfer` are implemented.
+The Gavel contract, the ten items, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The sign-in and currency patterns reuse the proven approach from the same team's Agent's Ladder project (a quiz game with an on-chain market, built earlier in the same hackathon). The contract follows the NEP-245 multi-token standard for Gavel Coins (token id `gavel`, 0 decimals): `mt_balance_of` / `mt_transfer` are implemented. Items are contract-managed assets, not NEP-245 tokens.
 
 
 ## For developers
