@@ -37,7 +37,7 @@ function agentByAccount(account) {
   return null;
 }
 
-/* ================= Network reads (direct, raced across endpoints) ================= */
+/* ================= Network reads (direct, sequential across endpoints) ================= */
 function fetchWithTimeout(url, options, timeoutMs) {
   var ms = timeoutMs || 8000;
   if (typeof AbortController === "undefined") return fetch(url, options);
@@ -63,25 +63,28 @@ function rpcCallVia(rpcUrl, methodName, argsObj) {
 }
 function rpcCall(methodName, argsObj, attempt) {
   attempt = attempt || 0;
-  return new Promise(function (resolve, reject) {
-    var settled = false, failed = 0, lastErr = null;
-    RPC_URLS.forEach(function (url) {
-      rpcCallVia(url, methodName, argsObj).then(function (v) { if (!settled) { settled = true; resolve(v); } },
-        function (err) {
-          lastErr = err; failed += 1;
-          if (failed >= RPC_URLS.length && !settled) {
-            /* One retry after a short pause: the live browser's
-               network path to the RPC endpoints can drop a whole
-               round of reads, and a single retry recovers it. */
-            if (attempt < 1) {
-              setTimeout(function () { rpcCall(methodName, argsObj, attempt + 1).then(resolve, reject); }, 2000);
-            } else {
-              settled = true; reject(lastErr || new Error("read failed"));
-            }
-          }
+  /* Read RPCs try endpoints SEQUENTIALLY, fastnear first. The old
+     parallel race fired every endpoint for every read, so one poll
+     could hold up to 39 concurrent fetches and queue the player's
+     own sign/broadcast behind them (Chromium allows ~6 connections
+     per host). A failed endpoint still falls through to the next. */
+  var i = 0;
+  function tryNext(lastErr) {
+    if (i >= RPC_URLS.length) {
+      /* One retry after a short pause: the live browser's
+         network path to the RPC endpoints can drop a whole
+         round of reads, and a single retry recovers it. */
+      if (attempt < 1) {
+        return new Promise(function (resolve, reject) {
+          setTimeout(function () { rpcCall(methodName, argsObj, attempt + 1).then(resolve, reject); }, 2000);
         });
-    });
-  });
+      }
+      return Promise.reject(lastErr || new Error("read failed"));
+    }
+    var url = RPC_URLS[i++];
+    return rpcCallVia(url, methodName, argsObj).then(null, function (err) { return tryNext(err); });
+  }
+  return tryNext(null);
 }
 function viewAccountVia(rpcUrl, accountId) {
   return fetchWithTimeout(rpcUrl, {
@@ -95,20 +98,24 @@ function viewAccountVia(rpcUrl, accountId) {
   });
 }
 function viewAccount(accountId) {
-  return new Promise(function (resolve, reject) {
-    var settled = false, failed = 0, sawMissing = false;
-    RPC_URLS.forEach(function (url) {
-      viewAccountVia(url, accountId).then(function (info) {
-        if (settled) return;
-        if (info) { settled = true; resolve(info); return; }
-        sawMissing = true; failed += 1;
-        if (failed >= RPC_URLS.length) { settled = true; resolve(null); }
-      }, function () {
-        if (settled) return; failed += 1;
-        if (failed >= RPC_URLS.length) { settled = true; if (sawMissing) resolve(null); else reject(new Error("account check failed")); }
-      });
-    });
-  });
+  /* Sequential, fastnear first — same answers as the old parallel
+     race (an existing account resolves at once; a missing one
+     resolves null once every endpoint has said so), with one
+     endpoint in flight at a time instead of three. */
+  var i = 0, sawMissing = false;
+  function tryNext() {
+    if (i >= RPC_URLS.length) {
+      if (sawMissing) return Promise.resolve(null);
+      return Promise.reject(new Error("account check failed"));
+    }
+    var url = RPC_URLS[i++];
+    return viewAccountVia(url, accountId).then(function (info) {
+      if (info) return info;
+      sawMissing = true;
+      return tryNext();
+    }, function () { return tryNext(); });
+  }
+  return tryNext();
 }
 
 /* ================= Player seat (the player's own account) =================
@@ -167,18 +174,34 @@ function connectSeat(keyPair, accountId, nodeUrl) {
     seatRpcUrl = url;
     player.accountId = accountId;
     player.ready = true;
+    /* Warm the access-key cache in the background: the first sign
+       (usually the claim) would otherwise pay a view_access_key
+       round-trip inside signTransaction before it can sign. Firing
+       findAccessKey now — fire-and-forget, never blocking seat
+       readiness — means that first sign finds the key already cached
+       and pays only the block fetch, like a warm sign. Errors are
+       swallowed: a failed warm simply leaves the sign to fetch the
+       key itself, as before. */
+    warmAccessKeyCache(account);
     return accountId;
   });
+}
+function warmAccessKeyCache(account) {
+  if (!account || typeof account.findAccessKey !== "function") return;
+  try {
+    var p = account.findAccessKey(CONTRACT_ID, []);
+    if (p && typeof p.catch === "function") p.catch(function () {});
+  } catch (e) {}
 }
 function createSeat(name, triesLeft) {
   var api = getNearApi();
   if (!api) return Promise.reject(new Error("The seat could not be made — the signing code did not load. Check your connection and tap again."));
   var keyPair = api.KeyPair.fromRandom("ed25519");
   var accountId = seatAccountIdFor(name);
-  return fetch(HELPER_URL, {
+  return fetchWithTimeout(HELPER_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ newAccountId: accountId, newAccountPublicKey: keyPair.getPublicKey().toString() })
-  }).then(function (resp) {
+  }, 15000).then(function (resp) {
     if (resp.ok) return null;
     return resp.text().then(function (text) {
       if (triesLeft > 0 && /taken|already exists/i.test(String(text || ""))) return "retry";
@@ -191,6 +214,14 @@ function createSeat(name, triesLeft) {
     storeSet("gavelKey:" + name, keyPair.toString());
     storeSet("gavelSeat:" + name, accountId);
     return connectSeat(keyPair, accountId);
+  }, function (err) {
+    /* The helper POST is bounded (15s): a stalled helper rejects with
+       an abort instead of hanging seat creation forever. The helper
+       may still have created the account before its response was
+       lost, so retry with a fresh account id exactly like the
+       "taken" retry above — never reuse the possibly-created id. */
+    if (triesLeft > 0 && /abort/i.test(String((err && err.name) || "") + " " + String((err && err.message) || ""))) return createSeat(name, triesLeft - 1);
+    throw err;
   });
 }
 
@@ -239,7 +270,7 @@ function ensureSeat() {
    the player's own key and broadcast with
    provider.sendTransactionAsync, which returns as soon as the
    network accepts it (wait_until NONE). The receipt is then checked
-   directly: poll txStatus with wait_until NONE every ~500ms (up to
+   directly: poll txStatus with wait_until NONE every ~250ms (up to
    ~15s) and resolve with the transaction hash (hex) only once the
    receipt shows success. A broadcast that never lands — a dropped
    transaction — now rejects instead of reporting success. Every
@@ -281,7 +312,12 @@ function withTimeout(promise, ms, label) {
   });
 }
 var signQueue = Promise.resolve();
-function signedCall(method, args) {
+/* Moves in flight. The Room page's own polls (poll/pollFast) pause
+   while this is non-zero, so a move's sign/broadcast fetches are
+   never queued behind the page's own reads. */
+var signedCallsInFlight = 0;
+function signedCall(method, args, onBroadcast) {
+  signedCallsInFlight++;
   var run = function () {
     return ensureSeat().then(function () {
       /* Prefer the fastest RPC for every submit: if an earlier bid fell
@@ -291,13 +327,16 @@ function signedCall(method, args) {
         return connectSeat(seatKeyPair, player.accountId, RPC_URLS[0]);
       }
     }).then(function () {
-      return submitSignedCall(method, args || {}, 0);
+      return submitSignedCall(method, args || {}, 0, onBroadcast);
     });
   };
   /* Chain onto the queue whether the previous move succeeded or
      failed, so the queue never deadlocks on a rejection. */
   var result = signQueue.then(run, run);
   signQueue = result.then(function () {}, function () {});
+  /* Clear the in-flight count exactly once, success or failure, so
+     the polls resume even after a failed move. */
+  result.then(function () { signedCallsInFlight--; }, function () { signedCallsInFlight--; });
   return result;
 }
 function txHashHex(hash) {
@@ -305,7 +344,7 @@ function txHashHex(hash) {
   for (var i = 0; i < hash.length; i++) hex += ("0" + hash[i].toString(16)).slice(-2);
   return hex;
 }
-function submitSignedCall(method, args, rpcIndex) {
+function submitSignedCall(method, args, rpcIndex, onBroadcast) {
   var api = getNearApi();
   /* Sign, raced against a 10s timeout: a stalled provider fetch inside
      signTransaction never settles on its own, and the bundle retries a
@@ -326,6 +365,13 @@ function submitSignedCall(method, args, rpcIndex) {
        poll below decides whether this hash landed. Any other broadcast
        rejection is thrown, and a fresh transaction is never signed. */
     return withTimeout(seatAccount.connection.provider.sendTransactionAsync(signedTx), 10000, "Broadcast").then(function () {
+      /* The transaction is SENT — accepted by the network — but not
+         confirmed. onBroadcast reports exactly that, and nothing
+         more: no success message, no balance change, until the
+         receipt below confirms it. (On a broadcast timeout the
+         transaction may or may not have been accepted, so the
+         callback does not fire there.) */
+      if (typeof onBroadcast === "function") { try { onBroadcast(txHashHex(hashBytes)); } catch (e) {} }
       return waitForReceipt(hashBytes);
     }, function (broadcastErr) {
       if (broadcastErr && /timed out/.test(String(broadcastErr.message || ""))) return waitForReceipt(hashBytes);
@@ -353,7 +399,7 @@ function submitSignedCall(method, args, rpcIndex) {
          failure after broadcast is never retried: the transaction may
          already be accepted, and a retry could bid twice. */
       return connectSeat(seatKeyPair, player.accountId, RPC_URLS[rpcIndex + 1]).then(function () {
-        return submitSignedCall(method, args, rpcIndex + 1);
+        return submitSignedCall(method, args, rpcIndex + 1, onBroadcast);
       });
     }
     throw err;
@@ -416,14 +462,14 @@ function waitForReceipt(hashBytes) {
         if (status && status.Failure) { done(reject, new Error("That move did not go through: " + receiptFailureText(status.Failure))); return; }
         /* No receipt yet — keep waiting until the timeout. */
         if (Date.now() >= deadline) { done(reject, new Error("The move was sent but did not land in time — try again.")); return; }
-        setTimeout(check, 500);
+        setTimeout(check, 250);
       }, function () {
         /* Not found yet, a wobbly endpoint, or a timed-out poll —
            keep polling until the timeout; a dropped transaction
            simply never appears. */
         if (settled) return;
         if (Date.now() >= deadline) { done(reject, new Error("The move was sent but did not land in time — try again.")); return; }
-        setTimeout(check, 500);
+        setTimeout(check, 250);
       });
     })();
   });
