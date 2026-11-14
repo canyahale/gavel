@@ -25,6 +25,9 @@ button{font:inherit;cursor:pointer}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #e6b84e;outline-offset:2px}
 .wrap{max-width:1060px;margin:0 auto;padding:12px 12px 48px}
 header.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.topnav{display:flex;gap:8px;background:#2e1d12;border:1px solid #6b4a26;border-radius:12px;padding:6px;margin-bottom:12px}
+.topnav a{color:#f7e3ac;text-decoration:none;font-weight:700;padding:8px 14px;border-radius:8px}
+.topnav a.active{background:#e6b84e;color:#231a04}
 h1.wordmark{font-family:"Marcellus",Georgia,serif;font-weight:400;font-size:1.7rem;margin:0;color:#f7e3ac;letter-spacing:.02em}
 h1.wordmark span{color:#e6b84e}
 .top .spacer{flex:1}
@@ -75,6 +78,7 @@ h1.wordmark span{color:#e6b84e}
 .sold-banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 .sold-banner .sold-big{font-family:"Marcellus",Georgia,serif;font-size:2.2rem;line-height:1}
 .sold-banner .sold-who{font-weight:800;margin-top:6px}
+.rare-banner{position:absolute;left:50%;top:118px;transform:translateX(-50%);z-index:7;background:linear-gradient(180deg,#f0c663,#c9962e);color:#231a04;border-radius:999px;padding:9px 18px;font-weight:800;text-align:center;box-shadow:0 10px 26px rgba(0,0,0,.5);max-width:92%}
 .bubble{position:absolute;z-index:6;transform:translate(-50%,-100%);background:#fff8e6;color:#231a04;border:2px solid #e6b84e;border-radius:14px;padding:6px 11px;font-weight:800;font-size:.92rem;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.45);pointer-events:none}
 .face{position:absolute;z-index:5;transform:translate(-50%,-100%);text-align:center;pointer-events:none}
 .face img{width:56px;height:56px;display:block;margin:0 auto;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
@@ -92,6 +96,8 @@ h1.wordmark span{color:#e6b84e}
 .quick .btn{flex:1;min-height:52px;padding:10px 8px;font-size:15px}
 .bid-msg{min-height:1.4em;font-weight:700;margin:8px 0 0}
 .bid-msg.ok{color:#7ddba4}.bid-msg.bad{color:#ff9a8a}
+.bid-msg.win-gold{color:#e6b84e;font-weight:800}
+.flash-red{border:2px solid #e0533d!important;box-shadow:0 0 18px rgba(224,83,61,.55);transition:border-color .25s,box-shadow .25s}
 .balance-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
 .balance-row .pill{flex:0 0 auto}
 /* ---- Bidders ---- */
@@ -160,6 +166,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   <span class="pill" id="pill-pool">Prize pool: <b id="pill-pool-v">—</b></span>
   <button class="icon-btn" id="btn-sound" type="button" aria-pressed="false" aria-label="Turn sound off" title="Sound">🔔</button>
 </header>
+<nav class="topnav" aria-label="Pages"><a href="index.html" class="active">Room</a><a href="leaderboard.html">Leaderboard</a><a href="goods.html">Goods</a><a href="market.html">Market</a></nav>
 
 <!-- The 3D room -->
 <section class="room-wrap" aria-label="The auction room">
@@ -182,6 +189,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
     <div class="sold-who" id="sold-who"></div>
     <div id="sold-price" style="font-weight:800"></div>
   </div>
+  <div class="rare-banner" id="rare-banner" hidden>A rare good is on the podium — it earns more than any good before it.</div>
   <div id="bubbles"></div>
   <div id="faces"></div>
   <div class="seat-tag" id="seat-tag">Your seat is at the front — the view from where you sit</div>
@@ -277,6 +285,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   </div>
   <h3>Why a lot is worth what it is</h3>
   <p>Every lot shows its daily income, its last sold price, and who has owned it before. Divide the price by the daily income and you get the payback: how many days of earnings it takes for the good to pay for itself. A low payback and a strong earnings history mean a good deal. A high payback means you are paying for the name, not the earnings.</p>
+  <p>New goods arrive over time, put up by the house. The highest-earning goods arrive first, and a good that earns 300 or more a day is rare — only a few will ever exist.</p>
   <h3>The three regulars</h3>
   <p><b>Mara</b> bids early and bids big — she wants the lot and does not hide it. <b>Bram</b> is patient: he watches, then raises in steady steps when the room goes quiet. <b>Pip</b> has the smallest purse, so every bid is a real decision; when Pip raises, Pip means it.</p>
   <p class="note">Gavel Coins are play coins for this game only. They have no cash value and cannot be taken out of the game.</p>
@@ -1579,6 +1588,8 @@ function onNewBid(a) {
   /* if the player was outbid, say so plainly */
   if (player.accountId && bidder !== player.accountId && myBidAuctions[a.auction_id]) {
     setBidMsg("You have been outbid on this lot — raise again or sit it out.", "bad");
+    el("bid-card").classList.add("flash-red");
+    setTimeout(function () { el("bid-card").classList.remove("flash-red"); }, 2500);
   }
 }
 function onSettled(a) {
@@ -1599,7 +1610,10 @@ function onSettled(a) {
   } else if (a.winner === player.accountId) {
     figureHop("__you");
     sound.win();
-    setBidMsg("You won " + goodName(a) + " for " + fmt(amount) + " coins! It is yours now — see Your goods.", "ok");
+    var winMsg = "You won! " + goodName(a) + " is yours.";
+    if (a.seller_id && a.seller_id !== HOUSE_ACCOUNT && a.seller_id !== player.accountId) winMsg += " You beat another player for this good.";
+    setBidMsg(winMsg, "ok");
+    el("bid-msg").classList.add("win-gold");
   }
   AGENTS.forEach(function (ag) {
     if (ag.account !== a.winner) figureSlump(ag.name);
@@ -1618,6 +1632,7 @@ function renderHud(lot) {
   var lotBox = el("hud-lot"), bidBox = el("hud-bid");
   if (!lot) {
     bidBox.hidden = true;
+    el("rare-banner").hidden = true;
     el("lot-kind").textContent = "The room";
     el("lot-name").textContent = "The room is quiet";
     var next = null;
@@ -1643,6 +1658,7 @@ function renderHud(lot) {
   el("lot-kind").textContent = kindLabel(good.kind) + " · earns " + fmt(good.income_per_day) + " a day";
   el("lot-name").textContent = good.name;
   el("lot-why").textContent = whyText(good, lot.current_bid);
+  el("rare-banner").hidden = !((Number(good.income_per_day) || 0) >= 300);
   setLotMesh(good.kind);
   updateLotBoard(good.name, "Current bid: " + fmt(lot.current_bid) + " coins");
   bidBox.hidden = false;
@@ -1771,7 +1787,8 @@ function renderMine() {
       '<div class="gactions"><input class="field" id="list-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Fixed price in coins" aria-label="Fixed price for ' + esc(g.name) + '" />' +
       '<button class="btn btn-dark" type="button" data-action="list-good" data-good="' + esc(g.good_id) + '">List at this price</button></div>' +
       '<div class="gactions"><input class="field" id="auc-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Opening bid in coins" aria-label="Opening bid for ' + esc(g.name) + '" />' +
-      '<button class="btn btn-dark" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>' +
+      '<p class="note">Put it up and other players and the room’s regulars will bid for it.</p>' +
+      '<button class="btn btn-gold" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>' +
       "</div>";
   });
   grid.innerHTML = html;

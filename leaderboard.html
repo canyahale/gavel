@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1060, viewport-fit=cover" />
+<title>The Gavel — Leaderboard</title>
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Public+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="gavel.css" />
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1 class="wordmark">The <span>Gavel</span></h1>
+  <div class="spacer"></div>
+  <span class="pill" id="pill-balance">Your coins: <b id="pill-balance-v">—</b></span>
+</header>
+<nav class="topnav" aria-label="Pages"><a href="index.html" data-page="room">Room</a><a href="leaderboard.html" data-page="leaderboard" class="active">Leaderboard</a><a href="goods.html" data-page="goods">Goods</a><a href="market.html" data-page="market">Market</a></nav>
+
+<section class="card">
+  <h2>Leaderboard — richest in the room</h2>
+  <p class="muted">Net worth is your coins plus what your goods are worth plus your shares. A good is worth its last sold price, or its listed price, or its starting bid, or 30 days of its earnings if it has never sold. A share is worth 100 coins.</p>
+  <div id="board-wrap"><p>Loading the leaderboard…</p></div>
+  <p class="note">The list updates as the room changes — it refreshes every 30 seconds.</p>
+</section>
+
+<footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
+</div>
+<script src="gavel-shared.js"></script>
+<script>
+"use strict";
+
+function el(id) { return document.getElementById(id); }
+
+function shortId(account) {
+  return String(account).slice(0, 8) + "…";
+}
+
+function playerName(account) {
+  var name = displayName(account);
+  if (name === "A bidder") return shortId(account);
+  return name;
+}
+
+var loading = false;
+var rendered = false;
+
+function loadBoard() {
+  if (loading) return;
+  loading = true;
+  loadGameData().then(function (data) {
+    loading = false;
+    if (!data || !data.goods) throw new Error("no goods");
+    var goods = data.goods || [];
+    var auctions = data.auctions || [];
+    var openAuctions = data.openAuctions || [];
+    var sharesList = data.shares || [];
+    var board = data.board || [];
+
+    /* Collect every account that holds something: good owners,
+       share holders, and the income board entries (cross-check:
+       its income totals should match the goods below). */
+    var accounts = {};
+    function addAccount(a) { if (a) accounts[a] = true; }
+    goods.forEach(function (g) { addAccount(g.owner_id); });
+    sharesList.forEach(function (s) {
+      (s.holders || []).forEach(function (h) { addAccount(h.account); });
+    });
+    board.forEach(function (row) { addAccount(row.account); });
+    if (player.accountId) addAccount(player.accountId);
+    var accountList = Object.keys(accounts);
+
+    /* Coin balances for every account, in parallel. A failed
+       read counts as 0 coins. */
+    var balanceCalls = accountList.map(function (a) {
+      return rpcCall("mt_balance_of", { token_id: "gavel", account_id: a })
+        .then(function (v) { return Number(v) || 0; })
+        .catch(function () { return 0; });
+    });
+    return Promise.all(balanceCalls).then(function (balances) {
+      var coinsByAccount = {};
+      accountList.forEach(function (a, i) { coinsByAccount[a] = balances[i]; });
+
+      /* Goods and shares per account. */
+      var rows = {};
+      accountList.forEach(function (a) {
+        rows[a] = { account: a, coins: coinsByAccount[a] || 0, goodsValue: 0, income: 0, goodNames: [], shares: 0 };
+      });
+      goods.forEach(function (g) {
+        var r = rows[g.owner_id];
+        if (!r) return;
+        r.goodsValue += goodValue(g, auctions, openAuctions);
+        r.income += Number(g.income_per_day) || 0;
+        r.goodNames.push(g.name);
+      });
+      sharesList.forEach(function (s) {
+        (s.holders || []).forEach(function (h) {
+          var r = rows[h.account];
+          if (r) r.shares += Number(h.shares) || 0;
+        });
+      });
+
+      var list = accountList.map(function (a) {
+        var r = rows[a];
+        r.netWorth = r.coins + r.goodsValue + r.shares * SHARE_PRICE;
+        return r;
+      });
+      list.sort(function (a, b) {
+        if (b.netWorth !== a.netWorth) return b.netWorth - a.netWorth;
+        if (b.income !== a.income) return b.income - a.income;
+        return a.account < b.account ? -1 : 1;
+      });
+
+      /* Header pill: your own coin balance, if you are seated. */
+      if (player.accountId && el("pill-balance-v")) {
+        el("pill-balance-v").textContent = fmt(coinsByAccount[player.accountId] || 0);
+      }
+
+      var html = '<table class="board"><thead><tr>'
+        + '<th class="num">Rank</th><th>Player</th><th class="num">Net worth</th>'
+        + '<th class="num">Coins</th><th>Goods</th><th class="num">Daily income</th>'
+        + '<th class="num">Shares</th></tr></thead><tbody>';
+      list.forEach(function (r, i) {
+        var shown = r.goodNames.slice(0, 3);
+        var goodsText = "—";
+        if (r.goodNames.length) {
+          goodsText = fmt(r.goodNames.length) + " — " + shown.map(esc).join(", ");
+          if (r.goodNames.length > 3) goodsText += " and " + (r.goodNames.length - 3) + " more";
+        }
+        html += '<tr' + (player.accountId && r.account === player.accountId ? ' class="me"' : '') + '>'
+          + '<td class="num">' + (i + 1) + '</td>'
+          + '<td>' + esc(playerName(r.account)) + '</td>'
+          + '<td class="num">' + fmt(r.netWorth) + '</td>'
+          + '<td class="num">' + fmt(r.coins) + '</td>'
+          + '<td>' + goodsText + '</td>'
+          + '<td class="num">' + fmt(r.income) + '</td>'
+          + '<td class="num">' + fmt(r.shares) + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      el("board-wrap").innerHTML = html;
+      rendered = true;
+    });
+  }).catch(function () {
+    loading = false;
+    /* Keep a good board on screen through a failed refresh;
+       only show the message when nothing has loaded yet. */
+    if (!rendered) {
+      el("board-wrap").innerHTML = "<p>Could not load the leaderboard — check your connection and refresh.</p>";
+    }
+  });
+}
+
+loadBoard();
+setInterval(loadBoard, 30000);
+</script>
+</body>
+</html>

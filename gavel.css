@@ -1,0 +1,160 @@
+:root{
+  --bg:#160d08; --surface:#241610; --surface2:#3a2417; --ink:#f7ead2;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Public Sans",system-ui,sans-serif;line-height:1.5}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #e6b84e;outline-offset:2px}
+.wrap{max-width:1060px;margin:0 auto;padding:12px 12px 48px}
+header.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.topnav{display:flex;gap:8px;background:#2e1d12;border:1px solid #6b4a26;border-radius:12px;padding:6px;margin-bottom:12px}
+.topnav a{color:#f7e3ac;text-decoration:none;font-weight:700;padding:8px 14px;border-radius:8px}
+.topnav a.active{background:#e6b84e;color:#231a04}
+h1.wordmark{font-family:"Marcellus",Georgia,serif;font-weight:400;font-size:1.7rem;margin:0;color:#f7e3ac;letter-spacing:.02em}
+h1.wordmark span{color:#e6b84e}
+.top .spacer{flex:1}
+.pill{background:#2e1d12;border:1px solid #6b4a26;color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:700;font-size:.95rem;white-space:nowrap}
+.pill b{color:#f7e3ac}
+.pill.gold{background:#e6b84e;color:#231a04;border-color:#e6b84e}
+.icon-btn{background:#2e1d12;border:1px solid #6b4a26;color:var(--ink);border-radius:50%;width:44px;height:44px;font-size:1.15rem;flex:0 0 auto}
+.btn{border:0;border-radius:12px;padding:13px 18px;font-weight:800;font-size:16px;min-height:52px;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn-gold{background:#e6b84e;color:#231a04}
+.btn-gold:hover{background:#f0c663}
+.btn-ghost{background:transparent;color:#f7e3ac;border:1px solid #6b4a26;min-height:40px;padding:8px 14px;font-size:.9rem}
+.btn-dark{background:#3a2417;color:var(--ink);border:1px solid #6b4a26}
+.btn-dark:hover{background:#4a2f1d}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.spin{width:18px;height:18px;border-radius:50%;border:3px solid rgba(35,26,4,.3);border-top-color:#231a04;animation:spin .7s linear infinite;flex:0 0 auto;display:inline-block}
+/* The claim button is dark brown, so the default dark spinner ring is
+   invisible on it — that is why a claim looked frozen. Light ring here. */
+.btn-dark .spin{border-color:rgba(247,227,172,.35);border-top-color:#f7e3ac}
+@keyframes spin{to{transform:rotate(360deg)}}
+.card{background:var(--surface);border:1px solid #4a2f1d;border-radius:16px;padding:16px;margin-top:14px}
+.card h2{margin:0 0 6px;font-size:1.2rem;color:#f7e3ac;font-family:"Marcellus",Georgia,serif;font-weight:400}
+.card h3{margin:14px 0 4px;font-size:1rem;color:#f7e3ac}
+.card p{margin:6px 0}
+.muted{color:#cbb391;font-size:.93rem}
+.note{font-size:.9rem;color:#cbb391}
+/* ---- The room ---- */
+.room-wrap{position:relative;border-radius:18px;overflow:hidden;border:2px solid #6b4a26;background:#1a0f08;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+#gl{position:relative;width:100%;height:72vh;min-height:420px;max-height:720px}
+#gl canvas{display:block;width:100%!important;height:100%!important}
+.hud{position:absolute;pointer-events:none;z-index:5}
+.hud-lot{top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.hud-box{background:rgba(20,11,6,.82);border:1px solid rgba(230,184,78,.6);border-radius:12px;padding:10px 12px;max-width:62%}
+.hud-box h2{margin:0;font-family:"Marcellus",Georgia,serif;font-weight:400;font-size:1.15rem;color:#f7e3ac;line-height:1.2}
+.hud-box .kind{font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#e6b84e}
+.hud-box .why{font-size:.85rem;color:#e8d9bd;margin-top:4px;line-height:1.4}
+.hud-bid{text-align:right;max-width:38%}
+.hud-bid .bid-label{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#cbb391}
+.hud-bid .bid-big{font-family:"Marcellus",Georgia,serif;font-size:clamp(1.7rem,7vw,2.4rem);line-height:1.05;color:#f7e3ac}
+.hud-bid .bid-who{font-size:.85rem;color:#e8d9bd;font-weight:700}
+.hud-bid .clock{font-family:"Marcellus",Georgia,serif;font-size:1.35rem;color:#e6b84e;line-height:1.1}
+.hud-bid .clock.low{color:#ff7a6b}
+.room-status{position:absolute;left:10px;right:10px;bottom:10px;z-index:5;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.status-line{background:rgba(20,11,6,.82);border:1px solid rgba(230,184,78,.45);border-radius:999px;padding:7px 13px;font-size:.87rem;font-weight:700;color:#f7e3ac;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.live-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2ecc71;margin-right:7px;animation:pulse 1.4s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.live-dot{animation:none}}
+.sold-banner{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%) scale(.9);z-index:8;background:linear-gradient(180deg,#e6b84e,#c9962e);color:#231a04;border-radius:16px;padding:16px 26px;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s}
+.sold-banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.sold-banner .sold-big{font-family:"Marcellus",Georgia,serif;font-size:2.2rem;line-height:1}
+.sold-banner .sold-who{font-weight:800;margin-top:6px}
+.rare-banner{position:absolute;left:50%;top:118px;transform:translateX(-50%);z-index:7;background:linear-gradient(180deg,#f0c663,#c9962e);color:#231a04;border-radius:999px;padding:9px 18px;font-weight:800;text-align:center;box-shadow:0 10px 26px rgba(0,0,0,.5);max-width:92%}
+.bubble{position:absolute;z-index:6;transform:translate(-50%,-100%);background:#fff8e6;color:#231a04;border:2px solid #e6b84e;border-radius:14px;padding:6px 11px;font-weight:800;font-size:.92rem;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.45);pointer-events:none}
+.face{position:absolute;z-index:5;transform:translate(-50%,-100%);text-align:center;pointer-events:none}
+.face img{width:56px;height:56px;display:block;margin:0 auto;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
+.face span{display:inline-block;background:rgba(20,11,6,.88);color:#f7e3ac;border:1px solid #e6b84e;border-radius:10px;padding:2px 9px;font-weight:800;font-size:.8rem;white-space:nowrap}
+.bubble:after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:#e6b84e;border-bottom:0}
+.bubble[hidden]{display:none}
+.seat-tag{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);z-index:4;background:rgba(20,11,6,.65);border:1px solid rgba(230,184,78,.35);color:#e8d9bd;border-radius:999px;padding:3px 10px;font-size:.72rem;font-weight:700;pointer-events:none;max-width:250px;text-align:center;line-height:1.3}
+/* ---- Bid box ---- */
+.bid-row{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+@media(min-width:640px){.bid-row{grid-template-columns:1fr auto auto auto}}
+.bid-amount{display:flex;gap:8px}
+.field{width:100%;padding:13px 14px;font:inherit;font-size:17px;border:1px solid #6b4a26;border-radius:12px;background:#160d08;color:var(--ink);min-height:52px}
+.field::placeholder{color:#8a6f52}
+.quick{display:flex;gap:8px}
+.quick .btn{flex:1;min-height:52px;padding:10px 8px;font-size:15px}
+.bid-msg{min-height:1.4em;font-weight:700;margin:8px 0 0}
+.bid-msg.ok{color:#7ddba4}.bid-msg.bad{color:#ff9a8a}
+.bid-msg.win-gold{color:#e6b84e;font-weight:800}
+.flash-red{border:2px solid #e0533d!important;box-shadow:0 0 18px rgba(224,83,61,.55);transition:border-color .25s,box-shadow .25s}
+.balance-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.balance-row .pill{flex:0 0 auto}
+/* ---- Bidders ---- */
+.bidders{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+@media(min-width:640px){.bidders{grid-template-columns:repeat(4,1fr)}}
+.bidder{background:#2e1d12;border:1px solid #4a2f1d;border-radius:14px;padding:12px}
+.bidder.you{border-color:#e6b84e}
+.bidder .bname{font-weight:800;font-size:1.02rem;display:flex;align-items:center;gap:8px}
+.dot{width:13px;height:13px;border-radius:50%;flex:0 0 auto;display:inline-block}
+.bidder .bstyle{font-size:.82rem;color:#cbb391}
+.bidder .bbudget{font-size:1.15rem;font-weight:800;color:#f7e3ac;margin-top:6px}
+.bidder .blast{font-size:.85rem;color:#e8d9bd;margin-top:2px;min-height:1.3em}
+.bidder.low{opacity:.75}
+.bidder.low .bbudget{color:#ff9a8a}
+/* ---- Goods / market ---- */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+.tab{background:#2e1d12;border:1px solid #4a2f1d;color:var(--ink);border-radius:999px;padding:10px 16px;font-weight:800;font-size:.95rem;min-height:46px}
+.tab.active{background:#e6b84e;color:#231a04;border-color:#e6b84e}
+.panel{display:none}
+.panel.active{display:block}
+.goods-grid{display:grid;gap:10px;margin-top:10px}
+@media(min-width:640px){.goods-grid{grid-template-columns:1fr 1fr}}
+.good{background:#2e1d12;border:1px solid #4a2f1d;border-radius:14px;padding:14px}
+.good.mine{border-color:#e6b84e}
+.good h3{margin:0;font-size:1.05rem;color:#f7e3ac}
+.good .gmeta{font-size:.88rem;color:#cbb391;margin-top:2px}
+.good .gprice{font-size:1.05rem;font-weight:800;margin-top:8px}
+.good .gwhy{font-size:.9rem;color:#e8d9bd;margin-top:6px;line-height:1.45}
+.good .gactions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.good .gactions .btn{min-height:44px;padding:9px 13px;font-size:.92rem}
+.good input.field{min-height:44px;padding:9px 12px;font-size:15px}
+.inline-field{display:flex;gap:8px;align-items:center}
+.inline-field .field{flex:1}
+/* ---- How it works ---- */
+.steps{display:grid;gap:10px;margin-top:10px}
+@media(min-width:640px){.steps{grid-template-columns:repeat(3,1fr)}}
+.step{background:#2e1d12;border:1px solid #4a2f1d;border-radius:14px;padding:14px}
+.step .when{font-family:"Marcellus",Georgia,serif;font-size:1.25rem;color:#e6b84e}
+.step p{margin:6px 0 0;font-size:.94rem}
+/* ---- Simulation ---- */
+.sim-log{margin-top:12px;display:grid;gap:4px;font-size:.92rem}
+.sim-log .day{font-weight:800;color:#e6b84e;margin-top:10px;font-size:1rem}
+.sim-log .line{color:#e8d9bd}
+.sim-log .line b{color:#f7e3ac}
+.sim-badge{display:inline-block;background:#e6b84e;color:#231a04;font-weight:800;font-size:.78rem;border-radius:999px;padding:3px 10px;letter-spacing:.04em}
+footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
+[hidden]{display:none!important}
+@media(max-width:560px){
+  .wrap{padding:10px 10px 40px}
+  .hud-box{max-width:58%;padding:8px 10px}
+  .hud-box h2{font-size:1rem}
+  .hud-box .why{font-size:.8rem}
+  .hud-bid{max-width:42%}
+  .bid-big{font-size:1.6rem}
+  #gl{height:72vh;min-height:420px}
+  .sold-banner .sold-big{font-size:1.7rem}
+}
+
+/* ---- Shared additions for the new pages (leaderboard, goods, market) ---- */
+/* Top nav bar, under the header on every page. */
+/* Rare good: gold border, red tag, soft gold glow. */
+.rare{border:2px solid #e6b84e!important;box-shadow:0 0 18px rgba(230,184,78,.35)}
+.rare .rare-tag{display:inline-block;background:#a83226;color:#fff;border-radius:999px;padding:2px 10px;font-weight:800;font-size:.78rem;letter-spacing:.04em;margin-left:8px;vertical-align:middle}
+/* Gold banner for the Room page. */
+/* Leaderboard table. */
+table.board{width:100%;border-collapse:collapse;margin-top:10px}
+table.board th{color:#e6b84e;text-align:left;font-size:.85rem;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid #6b4a26}
+table.board td{padding:10px;border-bottom:1px solid #3a2417;color:#f7ead2}
+table.board td.num,table.board th.num{text-align:right;font-variant-numeric:tabular-nums}
+table.board tr.me td{background:#3a2417;border-left:3px solid #e6b84e;font-weight:800}
+/* History list (goods page): small muted rows with a gold left edge. */
+.hist{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.hist li{font-size:.9rem;color:#cbb391;border-left:3px solid #e6b84e;background:#2e1d12;border-radius:8px;padding:8px 12px}
+.hist li b{color:#f7e3ac}
+/* Red flash for the bid card (JS adds/removes it). */
+/* Gold celebration for a win message. */
+.win-gold{color:#e6b84e;font-weight:800;font-size:1.25rem}

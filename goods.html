@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1060, viewport-fit=cover" />
+<!-- Always desktop layout, even on a phone: the page is designed for a
+     1060px-wide wrap, so a fixed-width viewport makes the mobile browser
+     lay it out at desktop width and scale it to fit. Pinch to zoom to read. -->
+<title>The Gavel — Goods &amp; their history</title>
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Public+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="gavel.css" />
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1 class="wordmark">The <span>Gavel</span></h1>
+  <div class="spacer"></div>
+  <span class="pill" id="pill-balance">Your coins: <b id="pill-balance-v">—</b></span>
+</header>
+<nav class="topnav" aria-label="Pages"><a href="index.html" data-page="room">Room</a><a href="leaderboard.html" data-page="leaderboard">Leaderboard</a><a href="goods.html" data-page="goods" class="active">Goods</a><a href="market.html" data-page="market">Market</a></nav>
+
+<section class="card">
+  <h2>Every good, and its story</h2>
+  <p class="muted">Each good earns coins every day. Its history shows what it sold for before, who owned it, and how fast it pays for itself.</p>
+  <div id="goods-wrap"><p>Loading the goods…</p></div>
+</section>
+
+<footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
+</div>
+<script src="gavel-shared.js"></script>
+<script>
+"use strict";
+
+/* Goods & their history — read-only page. No moves are made here,
+   only reads, so this page never calls the relay. */
+
+function el(id) { return document.getElementById(id); }
+
+function fmtDate(ns) {
+  var d = new Date(Math.round(Number(ns) / 1e6));
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function sharesFor(goodId, shares) {
+  var list = shares || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].good_id === goodId) return list[i];
+  }
+  return null;
+}
+
+function openAuctionFor(goodId, openAuctions) {
+  var list = openAuctions || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].good_id === goodId) return list[i];
+  }
+  return null;
+}
+
+function renderGoods(data) {
+  var wrap = el("goods-wrap");
+  var goods = data.goods || [];
+  var auctions = data.auctions || [];
+  var openAuctions = data.openAuctions || [];
+  var shares = data.shares || [];
+  if (!goods.length) {
+    wrap.innerHTML = "<p>No goods yet — check back soon.</p>";
+    return;
+  }
+  var html = '<div class="goods-grid">';
+  for (var i = 0; i < goods.length; i++) {
+    var good = goods[i];
+    var hist = saleHistory(good.good_id, auctions);
+    var income = Number(good.income_per_day) || 0;
+    var rare = isRare(good);
+    html += '<article class="good' + (rare ? " rare" : "") + '">';
+    html += "<h3>" + esc(good.name) + (rare ? ' <span class="rare-tag">Rare</span>' : "") + "</h3>";
+    html += '<p class="gmeta">' + esc(kindLabel(good.kind)) + " · earns " + fmt(income) + " coins a day</p>";
+    if (rare) html += '<p class="gmeta">Rare — only a few exist.</p>';
+    html += "<p>Owned by <b>" + esc(displayName(good.owner_id)) + "</b></p>";
+    /* Payback price: last sold price, else listed price, else the
+       starting bid of its open lot. */
+    var price = null;
+    if (hist.length) {
+      price = Number(hist[0].current_bid) || 0;
+      html += "<p>Last sold for <b>" + fmt(price) + " coins</b> to <b>" + esc(displayName(hist[0].winner)) + "</b></p>";
+    } else {
+      html += "<p>Never sold — first time on the podium</p>";
+      if (good.listed_price != null) {
+        price = Number(good.listed_price) || 0;
+      } else {
+        var open = openAuctionFor(good.good_id, openAuctions);
+        if (open) price = Number(open.starting_bid) || 0;
+      }
+    }
+    var days = paybackDays(price, income);
+    if (days != null) html += "<p>Pays for itself in about " + fmt(days) + " days of earnings.</p>";
+    /* Estimated earnings so far: daily earnings since its first sale.
+       The first sale is the oldest settled sale for this good. */
+    if (hist.length) {
+      var firstSaleSec = Number(hist[hist.length - 1].ends_at) / 1e9;
+      var daysSince = Math.max(0, (Date.now() / 1000 - firstSaleSec) / 86400);
+      var est = Math.round(income * daysSince);
+      html += "<p>Estimated earnings so far: about " + fmt(est) + " coins (an estimate from its daily earnings since its first sale).</p>";
+    } else {
+      html += "<p>No earnings history yet — it has never sold.</p>";
+    }
+    var sv = sharesFor(good.good_id, shares);
+    var sold = 0;
+    if (sv && sv.total_sold != null) sold = Number(sv.total_sold) || 0;
+    if (sv && sv.holders && sv.holders.length) {
+      var parts = [];
+      for (var h = 0; h < sv.holders.length; h++) {
+        parts.push(esc(displayName(sv.holders[h].account)) + " holds " + fmt(sv.holders[h].shares));
+      }
+      html += "<p>Shares: " + fmt(sold) + " of 10 sold — " + parts.join(", ") + "</p>";
+    } else {
+      html += "<p>Shares: " + fmt(sold) + " of 10 sold. No shares sold yet.</p>";
+    }
+    html += '<ul class="hist">';
+    if (hist.length) {
+      for (var s = 0; s < hist.length; s++) {
+        html += "<li>Sold for <b>" + fmt(hist[s].current_bid) + " coins</b> to <b>" + esc(displayName(hist[s].winner)) + "</b> on " + esc(fmtDate(hist[s].ends_at)) + "</li>";
+      }
+    } else {
+      html += "<li>Never sold.</li>";
+    }
+    html += "</ul>";
+    html += '<p><a class="btn btn-dark" href="market.html">See it in the market</a></p>';
+    html += "</article>";
+  }
+  html += "</div>";
+  wrap.innerHTML = html;
+}
+
+function refreshBalance() {
+  if (!player.ready || !player.accountId) return;
+  rpcCall("mt_balance_of", { account_id: player.accountId, token_id: TOKEN_ID }).then(function (bal) {
+    el("pill-balance-v").textContent = fmt(bal);
+  }, function () {});
+}
+
+function refresh() {
+  loadGameData().then(function (data) {
+    if (!data || !data.goods) {
+      el("goods-wrap").innerHTML = "<p>Could not load the goods — check your connection and refresh.</p>";
+      return;
+    }
+    renderGoods(data);
+  }, function () {
+    el("goods-wrap").innerHTML = "<p>Could not load the goods — check your connection and refresh.</p>";
+  });
+  refreshBalance();
+}
+
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>

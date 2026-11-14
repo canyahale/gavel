@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1060, viewport-fit=cover" />
+<title>The Gavel — Market</title>
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Public+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="gavel.css" />
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1 class="wordmark">The <span>Gavel</span></h1>
+  <div class="spacer"></div>
+  <span class="pill" id="pill-balance">Your coins: <b id="pill-balance-v">—</b></span>
+</header>
+<nav class="topnav" aria-label="Pages"><a href="index.html" data-page="room">Room</a><a href="leaderboard.html" data-page="leaderboard">Leaderboard</a><a href="goods.html" data-page="goods">Goods</a><a href="market.html" data-page="market" class="active">Market</a></nav>
+
+<section class="card" id="player-auctions-card">
+  <h2>Player auctions</h2>
+  <p class="muted">A player put these up — bid against other players and the room's regulars.</p>
+  <div id="player-auctions"><p>Loading…</p></div>
+  <p class="note">If you win a lot another player put up, the room will tell you that you beat another player for it.</p>
+</section>
+
+<section class="card">
+  <h2>All goods &amp; market</h2>
+  <p id="market-msg" class="bid-msg" aria-live="polite"></p>
+  <div id="market-grid"><p>Loading the goods…</p></div>
+</section>
+
+<section class="card">
+  <h2>Your goods</h2>
+  <div id="mine-grid"></div>
+  <p id="mine-empty">Take your seat to see your goods here.</p>
+</section>
+
+<footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
+</div>
+<script src="gavel-shared.js"></script>
+<script>
+"use strict";
+
+/* ================= The Gavel — Market page ================= */
+/* Plain JS, no libraries. Reads through gavel-shared.js, acts through
+   the relay (signedCall) — this page never sees a key. Player-facing
+   words only: coins, goods, the room. */
+
+function el(id) { return document.getElementById(id); }
+
+var state = { goods: [], open: [], auctions: [], shares: {}, prize: 0, loaded: false };
+
+function goodById(id) {
+  for (var i = 0; i < state.goods.length; i++) if (state.goods[i].good_id === id) return state.goods[i];
+  return null;
+}
+function whyText(good, price) {
+  var inc = Number(good.income_per_day) || 0;
+  var hist = saleHistory(good.good_id, state.auctions);
+  var parts = ["Earns " + fmt(inc) + " coins a day"];
+  if (hist.length) {
+    parts.push("last sold for " + fmt(hist[0].current_bid) + " to " + displayName(hist[0].winner));
+    var owners = [];
+    hist.forEach(function (h) { var n = displayName(h.winner); if (owners.indexOf(n) < 0) owners.push(n); });
+    if (owners.length) parts.push("owned before by " + owners.slice(0, 3).join(", "));
+  } else {
+    parts.push("never sold before — first time on the podium");
+  }
+  if (price) {
+    var pb = paybackDays(price, inc);
+    if (pb) parts.push("pays for itself in about " + pb + " day" + (pb === 1 ? "" : "s") + " of earnings at this price");
+  }
+  return parts.join(" · ") + ".";
+}
+function shareInfo(goodId) {
+  var s = state.shares[goodId];
+  if (!s) return { total: 0, mine: 0 };
+  var mine = 0;
+  s.holders.forEach(function (h) { if (h.account === player.accountId) mine = h.shares; });
+  return { total: s.total_sold, mine: mine };
+}
+function setMarketMsg(text, kind) {
+  var m = el("market-msg");
+  m.textContent = text || "";
+  m.className = "bid-msg" + (kind ? " " + kind : "");
+}
+function setMarketMsgHtml(html, kind) {
+  var m = el("market-msg");
+  m.innerHTML = html;
+  m.className = "bid-msg" + (kind ? " " + kind : "");
+}
+function timeLeftText(a) {
+  var ms = Math.floor(Number(a.ends_at) / 1000000) - Date.now();
+  if (ms <= 0) return "closing soon";
+  var s = Math.ceil(ms / 1000);
+  if (s < 60) return "closing soon";
+  return Math.floor(s / 60) + " min left";
+}
+
+/* ================= Player auctions ================= */
+function renderPlayerAuctions() {
+  var holder = el("player-auctions");
+  if (!state.loaded) { holder.innerHTML = "<p>Loading…</p>"; return; }
+  var list = (state.open || []).filter(function (a) {
+    return a.seller_id && a.seller_id !== HOUSE_ACCOUNT && !agentByAccount(a.seller_id);
+  });
+  if (!list.length) {
+    holder.innerHTML = "<p>No player has put a good up for auction right now — check back soon, or put one of your own up.</p>";
+    return;
+  }
+  var html = "";
+  list.forEach(function (a) {
+    var g = goodById(a.good_id);
+    var name = g ? g.name : (a.good_name || "A lot");
+    var kind = g ? g.kind : a.good_kind;
+    var income = g ? Number(g.income_per_day) || 0 : Number(a.good_income_per_day) || 0;
+    var bid = a.bids_count > 0 ? Number(a.current_bid) : Number(a.starting_bid);
+    var leader = a.bids_count > 0 && a.current_bidder ? displayName(a.current_bidder) : "No bids yet — be the first";
+    html += '<div class="good"><h3>' + esc(name) + "</h3>" +
+      '<div class="gmeta">A player put this up — bid against other players and the room’s regulars.</div>' +
+      '<div class="gmeta">' + (kind ? esc(kindLabel(kind)) + " · " : "") + "earns " + fmt(income) + " coins a day · put up by " + esc(displayName(a.seller_id)) + "</div>" +
+      '<div class="gprice">Current bid: ' + fmt(bid) + " coins · leading: " + esc(leader) + "</div>" +
+      '<div class="gwhy">' + esc(timeLeftText(a)) + "</div>" +
+      '<div class="gactions"><a class="btn btn-gold" href="index.html">Bid in the room</a></div></div>';
+  });
+  holder.innerHTML = html;
+}
+
+/* ================= All goods & market (as in the Room) ================= */
+function renderMarket() {
+  var holder = el("market-grid");
+  if (!state.goods.length) { holder.innerHTML = "<p>Loading the goods…</p>"; return; }
+  var html = "";
+  state.goods.forEach(function (g) {
+    var hist = saleHistory(g.good_id, state.auctions);
+    var last = hist.length ? fmt(hist[0].current_bid) + " to " + displayName(hist[0].winner) : "Never sold";
+    var sh = shareInfo(g.good_id);
+    var mine = player.accountId && g.owner_id === player.accountId;
+    var listed = g.listed_price != null;
+    var rare = isRare(g);
+    html += '<div class="good' + (mine ? " mine" : "") + (rare ? " rare" : "") + '"><h3>' + esc(g.name) + (rare ? ' <span class="rare-tag">Rare</span>' : "") + "</h3>" +
+      '<div class="gmeta">' + esc(kindLabel(g.kind)) + " · earns " + fmt(g.income_per_day) + " coins a day · owned by " + esc(displayName(g.owner_id)) + "</div>" +
+      '<div class="gprice">Last sold: ' + esc(last) + "</div>" +
+      '<div class="gwhy">' + esc(whyText(g, listed ? g.listed_price : (hist.length ? hist[0].current_bid : null))) + "</div>" +
+      '<div class="gmeta">Shares: ' + sh.total + " of 10 sold · you hold " + sh.mine + " · a share earns a tenth of the daily income</div>" +
+      '<div class="gactions">' +
+      (listed && !mine ? '<button class="btn btn-gold" type="button" data-action="buy-good" data-good="' + esc(g.good_id) + '" data-price="' + esc(g.listed_price) + '">Buy now — ' + fmt(g.listed_price) + " coins</button>" : "") +
+      (listed && mine ? "<span class='note'>Listed at " + fmt(g.listed_price) + " coins</span>" : "") +
+      '<button class="btn btn-dark" type="button" data-action="buy-share" data-good="' + esc(g.good_id) + '">Buy a share — 100</button>' +
+      (sh.mine > 0 ? '<button class="btn btn-dark" type="button" data-action="sell-share" data-good="' + esc(g.good_id) + '">Sell a share — 100</button>' : "") +
+      "</div></div>";
+  });
+  holder.innerHTML = html;
+}
+
+/* ================= Your goods (as in the Room) ================= */
+function renderMine() {
+  var grid = el("mine-grid"), empty = el("mine-empty");
+  if (!player.accountId) {
+    grid.innerHTML = "";
+    empty.hidden = false;
+    empty.innerHTML = 'Take your seat to see your goods here. <a href="index.html">Take your seat in the Room</a>';
+    return;
+  }
+  var mine = state.goods.filter(function (g) { return g.owner_id === player.accountId; });
+  if (!mine.length) {
+    grid.innerHTML = "";
+    empty.hidden = false;
+    empty.textContent = "No goods yet — win a lot and it will show here, earning coins every day.";
+    return;
+  }
+  empty.hidden = true;
+  var html = "";
+  mine.forEach(function (g) {
+    var sh = shareInfo(g.good_id);
+    html += '<div class="good mine"><h3>' + esc(g.name) + "</h3>" +
+      '<div class="gmeta">' + esc(kindLabel(g.kind)) + " · earns " + fmt(g.income_per_day) + " coins a day · income waiting: " + fmt(g.income_accrued) + " coins</div>" +
+      '<div class="gwhy">' + esc(whyText(g, null)) + "</div>" +
+      '<div class="gmeta">Shares sold: ' + sh.total + " of 10 · you keep the rest of the income</div>" +
+      '<div class="gactions">' +
+      '<button class="btn btn-gold" type="button" data-action="claim-income" data-good="' + esc(g.good_id) + '">Claim income</button>' +
+      (g.listed_price != null ? '<button class="btn btn-dark" type="button" data-action="delist" data-good="' + esc(g.good_id) + '">Take off the market</button>' : "") +
+      "</div>" +
+      '<div class="gactions"><input class="field" id="list-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Fixed price in coins" aria-label="Fixed price for ' + esc(g.name) + '" />' +
+      '<button class="btn btn-dark" type="button" data-action="list-good" data-good="' + esc(g.good_id) + '">List at this price</button></div>' +
+      '<div class="gactions"><input class="field" id="auc-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Opening bid in coins" aria-label="Opening bid for ' + esc(g.name) + '" />' +
+      '<p class="note">Put it up and other players and the room’s regulars will bid for it.</p>' +
+      '<button class="btn btn-gold" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>' +
+      "</div>";
+  });
+  grid.innerHTML = html;
+}
+
+/* ================= Actions (as in the Room) ================= */
+function doAction(method, args, okText, btn) {
+  if (!player.accountId) {
+    setMarketMsgHtml('Take your seat first — pick a display name in the Room. <a href="index.html">Take your seat</a>', "bad");
+    return;
+  }
+  if (btn) btn.disabled = true;
+  signedCall(method, args).then(function () {
+    setMarketMsg(okText, "ok");
+    if (btn) btn.disabled = false;
+    poll();
+  }, function (err) {
+    var msg = (err && err.message) ? err.message : "That did not go through. Check your connection and try again.";
+    setMarketMsg(msg, "bad");
+    if (btn) btn.disabled = false;
+  });
+}
+document.addEventListener("click", function (e) {
+  var t = e.target.closest("[data-action]");
+  if (!t) return;
+  var good = t.dataset.good;
+  if (t.dataset.action === "buy-good") doAction("buy_good", { good_id: good }, "You bought it — it is yours now.", t);
+  else if (t.dataset.action === "buy-share") doAction("buy_share", { good_id: good }, "You own a share — a tenth of its daily income is yours.", t);
+  else if (t.dataset.action === "sell-share") doAction("sell_share", { good_id: good }, "Share sold back for 100 coins.", t);
+  else if (t.dataset.action === "claim-income") doAction("claim_income", { good_id: good }, "Income claimed — it is in your coins now.", t);
+  else if (t.dataset.action === "delist") doAction("delist_good", { good_id: good }, "Taken off the market.", t);
+  else if (t.dataset.action === "list-good") {
+    var g = goodById(good);
+    var hist = saleHistory(good, state.auctions);
+    var def = hist.length ? Number(hist[0].current_bid) : (g ? (Number(g.income_per_day) || 0) * 30 : 0);
+    var typed = (el("list-" + good) || {}).value || "";
+    var answer = window.prompt("Fixed price in coins for this good?", typed || String(def || ""));
+    if (answer == null) return;
+    var price = Math.floor(Number(answer));
+    if (!price || price < 1) { setMarketMsg("Set a fixed price first.", "bad"); return; }
+    doAction("list_good", { good_id: good, price: String(price) }, "Listed at " + fmt(price) + " coins.", t);
+  } else if (t.dataset.action === "open-auction") {
+    var start = Math.floor(Number((el("auc-" + good) || {}).value || 0));
+    if (!start || start < 1) { setMarketMsg("Set an opening bid first.", "bad"); return; }
+    doAction("open_auction", { good_id: good, starting_bid: String(start), duration_seconds: 600 }, "Your good is on the podium for 10 minutes.", t);
+  }
+});
+
+/* ================= Poll ================= */
+function refreshBalance() {
+  if (!player.accountId) return;
+  rpcCall("mt_balance_of", { account_id: player.accountId, token_id: TOKEN_ID }).then(function (bal) {
+    el("pill-balance-v").textContent = fmt(bal) + " coins";
+  }, function () {});
+}
+function poll() {
+  loadGameData().then(function (d) {
+    if (d.goods) state.goods = d.goods;
+    if (d.openAuctions) state.open = d.openAuctions;
+    if (d.auctions) state.auctions = d.auctions;
+    if (d.shares) {
+      state.shares = {};
+      if (Array.isArray(d.shares)) {
+        d.shares.forEach(function (s) { state.shares[s.good_id] = s; });
+      } else {
+        state.shares = d.shares;
+      }
+    }
+    if (d.prize != null) state.prize = Number(d.prize) || 0;
+    state.loaded = true;
+    renderPlayerAuctions();
+    renderMarket();
+    renderMine();
+    refreshBalance();
+  }, function () {});
+}
+poll();
+setInterval(poll, 15000);
+</script>
+</body>
+</html>
