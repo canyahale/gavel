@@ -60,18 +60,6 @@ The Games track brief is: "The economy is the gameplay. Build NPCs with wallets,
 The Gavel contract, the eight goods, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The sign-in and currency patterns reuse the proven approach from the same team's Agent's Ladder project (a quiz game with an on-chain market, built earlier in the same hackathon).
 
 
-## How it compares to the other Games entries
-
-Honest, on the evidence (researched 13 Nov 2026):
-
-**Nims** — "a market town where every trader is an AI agent with its own wallet. Flood the market and prices crash." What it does well: the economy is the game, the traders are autonomous, prices move with supply and demand, and it has a wariness mechanic (traders become wary from shared trade memory) and council votes that change next-day behaviour. What The Gavel does that Nims does not: it is public and verifiable. Nims' repo returns 404 (private, deleted, or renamed — no code readable), its testnet account holds no contract code, no deployed market contract was found, the question of who signs the merchants' transfers is unanswered, and a share-dividend front-running exploit was flagged with no visible answer. The Gavel has a public repo, a deployed contract with real on-chain bids and ownership, and honest docs. And it is a live event — you compete in the room in real time — instead of a market sim you watch. The Gavel's shares also pay continuously per income, so there is no payout window to front-run. The Gavel now has its own wariness too: a bidder who keeps losing to the same rival stops fighting them head-on, and every bidder's valuation moves with their wins and losses — so the agents adapt, not just trade.
-
-**Till Dawn: The Grand Market** — every merchant is an AI agent with its own account, till, and stock; merchants set prices, trade with players and each other, pay rent, and can go broke. What it does well: the merchants genuinely trade with each other and live or die by their till (504 AI decisions and 157 merchant-to-merchant deals measured over 3 game days). What The Gavel does that Till Dawn does not: it is a live event, not a management sim. You do not run a stall and watch the town — you sit in the room and fight for the same scarce thing in real time, against agents bidding against you right now. The tension, the skill (valuation, timing, reading the room), and the immediacy are what Till Dawn does not have. And The Gavel was built fully in the hackathon window; Till Dawn's survival game predates it (only the market and contract were built in-window).
-
-**Lunearcy** — mentioned as a "shared NPC merchant" entry. No repo, site, or listing was found, so it cannot be verified. The Gavel beats an unverifiable entry by being real, public, deployed, and playable.
-
-The edge, in one line: Nims and Till Dawn are market sims you manage and watch. The Gavel is a live auction you sit in and fight in. The price is the outcome of a fight you just had, not a number on a screen.
-
 ## For developers
 
 - Contract: `gavel-0lycf4.testnet` (Rust, near-sdk 5.5). Source in `contract/`.
