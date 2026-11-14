@@ -18,14 +18,18 @@
  *   relay not configured (env missing/unparseable) -> 500
  *   transaction / RPC failure -> 200 { ok:false, error }
  */
-const { connect, keyStores, KeyPair } = require("near-api-js");
+const { connect, keyStores, KeyPair, transactions } = require("near-api-js");
 
 const CONTRACT_ID = "gavel-0lycf4.testnet";
 const GAS = BigInt("30000000000000"); // 3e13, same as the frontend
+/* Fastest first: fastnear answers in ~1s, rpc.testnet.near.org is
+ * often the slowest (3-5s for a status call). The old order tried
+ * near.org first, so every bid paid its slowness before it even
+ * submitted — that is why a bid took up to 15s. */
 const RPC_URLS = [
-  "https://rpc.testnet.near.org",
   "https://rpc.testnet.fastnear.com",
   "https://test.rpc.fastnear.com",
+  "https://rpc.testnet.near.org",
 ];
 const CHANGE_METHODS = new Set([
   "claim_faucet",
@@ -100,10 +104,13 @@ function shortError(err) {
   return m.length > 200 ? m.slice(0, 200) : m;
 }
 
-/* Pick the first RPC that answers a read-only status query, then submit
- * exactly once through it. This avoids ever submitting the same
- * transaction twice when an endpoint is down. */
-async function connectHealthy(keyStore) {
+/* Submit a signed transaction through the first RPC that accepts it.
+ * No separate health check: the sign step itself reads the block hash
+ * from the RPC, so a dead endpoint fails fast there and we fall back
+ * before anything is submitted — which is what the old status() probe
+ * was for, at the cost of an extra round-trip on every bid. Trying
+ * fastnear first keeps the common path to one sign + one broadcast. */
+async function submitThroughFirstRpc(keyStore, accountId, method, args) {
   let lastErr = null;
   for (const url of RPC_URLS) {
     try {
@@ -113,8 +120,12 @@ async function connectHealthy(keyStore) {
         nodeUrl: url,
         headers: {},
       });
-      await near.connection.provider.status();
-      return near;
+      const account = await near.account(accountId);
+      const [hash, signedTx] = await account.signTransaction(CONTRACT_ID, [
+        transactions.functionCall(method, args, GAS, BigInt(0)),
+      ]);
+      await near.connection.provider.sendTransactionAsync(signedTx);
+      return Buffer.from(hash).toString("hex");
     } catch (e) {
       lastErr = e;
     }
@@ -186,23 +197,18 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Change method: sign + submit as the pool account.
+  // Change method: sign + broadcast as the pool account, and return
+  // as soon as the transaction is accepted — do NOT wait for the
+  // execution outcome. Waiting for execution added ~4s to every bid
+  // (the chain needs a block or two), so a bid took up to 15s.
+  // The page polls the open lots every 2s, so it picks the bid up
+  // and shows it within ~2s of it landing on-chain. A failed
+  // transaction simply never appears as a bid, which the page
+  // already reflects (the bid display does not change).
   try {
     const keyStore = new keyStores.InMemoryKeyStore();
     await keyStore.setKey("testnet", entry.a, KeyPair.fromString(entry.k));
-    const near = await connectHealthy(keyStore);
-    const account = await near.account(entry.a);
-    const outcome = await account.functionCall({
-      contractId: CONTRACT_ID,
-      methodName: method,
-      args,
-      gas: GAS,
-      attachedDeposit: BigInt(0),
-    });
-    const txHash =
-      outcome && outcome.transaction && outcome.transaction.hash
-        ? outcome.transaction.hash
-        : "";
+    const txHash = await submitThroughFirstRpc(keyStore, entry.a, method, args);
     sendJson(res, 200, { ok: true, txHash });
   } catch (err) {
     sendJson(res, 200, { ok: false, error: shortError(err) });
