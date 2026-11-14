@@ -12,10 +12,12 @@
 //!
 //! Core rules:
 //! - Faucet: 1500 Gavel Coins once per day per account.
-//! - Goods (stall, route, recipe, relic) earn income every day. The
-//!   owner claims it; each of the 10 shares in a good earns 1/10 of
+//! - Goods (stall, route, recipe, relic) earn income every day. Anyone
+//!   may trigger the claim; each of the 10 shares in a good earns 1/10 of
 //!   the income, so shareholders are paid pro-rata and the owner keeps
-//!   the unsold shares' portion.
+//!   the unsold shares' portion. Income accrued under a previous owner
+//!   is paid out to that owner when the good changes hands, so a buyer
+//!   never inherits the seller's unclaimed income.
 //! - English auctions: a lot opens with a starting bid, bids must beat
 //!   the current bid by at least the minimum increment, a bid in the
 //!   last 30 seconds extends the lot by 30 seconds (anti-snipe), and
@@ -701,23 +703,25 @@ impl Contract {
         U128(Self::income_accrued(&good))
     }
 
-    /// Claims a good's accrued income. The caller must own the good.
-    /// The income is minted and split pro-rata across the good's 10
-    /// shares: each share earns 1/10, the owner keeps the unsold
-    /// shares' portion. Returns the amount the caller received.
-    pub fn claim_income(&mut self, good_id: String) -> U128 {
-        let caller = env::predecessor_account_id();
+    /// Pays out a good's accrued income to its current owner and
+    /// shareholders and resets the income clock. Returns the amount
+    /// the owner received. Returns 0 (and changes nothing) when
+    /// nothing has accrued. Called by `claim_income` and before any
+    /// ownership transfer, so a buyer never inherits the seller's
+    /// unclaimed income.
+    fn distribute_income(&mut self, good_id: &str) -> u128 {
         let mut good = goods_map()
-            .get(&good_id)
+            .get(&good_id.to_string())
             .cloned()
             .expect("Good does not exist");
-        assert_eq!(good.owner_id, caller, "Only the owner can claim income");
         let accrued = Self::income_accrued(&good);
-        assert!(accrued > 0, "No income accrued yet");
+        if accrued == 0 {
+            return 0;
+        }
         good.last_income_claim_at = env::block_timestamp();
         goods_insert(good.clone());
         let per_share = accrued / (SHARES_PER_GOOD as u128);
-        let holdings = shares_for(&good_id);
+        let holdings = shares_for(good_id);
         let mut paid_out = 0u128;
         for h in &holdings {
             let share_income = per_share * (h.shares as u128);
@@ -728,9 +732,24 @@ impl Contract {
         }
         let owner_income = accrued - paid_out;
         if owner_income > 0 {
-            self.mint(&caller, owner_income);
+            self.mint(&good.owner_id, owner_income);
         }
-        U128(owner_income)
+        owner_income
+    }
+
+    /// Claims a good's accrued income. Anyone may trigger it; the
+    /// income is minted and split pro-rata across the good's 10
+    /// shares: each share earns 1/10, the owner keeps the unsold
+    /// shares' portion. The caller cannot redirect the payments —
+    /// they always go to the owner and shareholders. Returns the
+    /// amount the owner received.
+    pub fn claim_income(&mut self, good_id: String) -> U128 {
+        let good = goods_map()
+            .get(&good_id)
+            .cloned()
+            .expect("Good does not exist");
+        assert!(Self::income_accrued(&good) > 0, "No income accrued yet");
+        U128(self.distribute_income(&good_id))
     }
 
     // ─── Auctions ────────────────────────────────────────────────
@@ -864,6 +883,9 @@ impl Contract {
             self.move_coins(&contract_id, &auction.seller_id, price);
             // 5% minted extra to the prize pool.
             self.prize_pool += price * SALE_FEE_PERCENT / 100;
+            // Pay out income accrued under the seller first, so the
+            // winner starts with a clean income clock.
+            self.distribute_income(&auction.good_id);
             // Ownership transfers; shares reset.
             let mut good = goods_map()
                 .get(&auction.good_id)
@@ -934,6 +956,14 @@ impl Contract {
         let seller = good.owner_id.clone();
         self.move_coins(&caller, &seller, price.0);
         self.prize_pool += price.0 * SALE_FEE_PERCENT / 100;
+        // Pay out income accrued under the seller first, so the buyer
+        // starts with a clean income clock. Re-read the good after,
+        // because the payout reset its income timestamp.
+        self.distribute_income(&good_id);
+        let mut good = goods_map()
+            .get(&good_id)
+            .cloned()
+            .expect("Good does not exist");
         good.owner_id = caller;
         good.listed_price = None;
         goods_insert(good);
@@ -1182,7 +1212,11 @@ impl Contract {
             }
         }
         let total_paid: u128 = winners.iter().map(|w| w.amount.0).sum();
-        self.prize_pool = 0;
+        // Only clear the pool when someone was actually paid.
+        // Otherwise the pool rolls over to the next season.
+        if !winners.is_empty() {
+            self.prize_pool = 0;
+        }
         state.last_payout_season = season_number;
         state.season_number += 1;
         state.season_start = now;
@@ -1297,8 +1331,9 @@ mod tests {
         testing_env!(ctx(alice(), DAY_NS + 200_000_000_000).build());
         let winner = c.settle_auction(id);
         assert_eq!(winner, Some(carol()));
-        // Seller (alice) received the winning bid; carol owns the good.
-        assert_eq!(c.balance_of(&alice()), 350);
+        // Seller (alice) received the winning bid plus the income
+        // accrued from creation to settlement (60/day for ~1 day).
+        assert_eq!(c.balance_of(&alice()), 350 + 60);
         let good = c.get_good("stall-1".to_string()).unwrap();
         assert_eq!(good.owner_id, carol());
         // 5% of 350 minted to the prize pool.
@@ -1352,8 +1387,9 @@ mod tests {
         let good = c.get_good("stall-1".to_string()).unwrap();
         assert_eq!(good.owner_id, carol());
         assert_eq!(good.shares_sold, 0);
-        // Alice got the 500 sale price plus bob's 100 share payment.
-        assert_eq!(c.balance_of(&alice()), 600);
+        // Alice got the 500 sale price plus bob's 100 share payment
+        // plus 54 income (60 accrued, 6 to bob's 1 share).
+        assert_eq!(c.balance_of(&alice()), 654);
     }
 
     #[test]
@@ -1370,14 +1406,16 @@ mod tests {
         testing_env!(ctx(alice(), DAY_NS + 200_000_000_000).build());
         let winner = c.settle_auction(id);
         assert_eq!(winner, Some(bob()));
-        // The house (contract account) holds exactly the 300 sale
-        // proceeds — not 600. Total supply is unchanged by settlement.
-        assert_eq!(c.balance_of(&alice()), 300);
-        assert_eq!(c.total_supply, 2000);
+        // The house (contract account) holds the 300 sale proceeds
+        // plus the 60 income accrued to settlement — not 600. The
+        // self-transfer itself creates nothing; the 60 is a
+        // legitimate income mint, so total supply is 2000 + 60.
+        assert_eq!(c.balance_of(&alice()), 300 + 60);
+        assert_eq!(c.total_supply, 2000 + 60);
         // The one-time correction removes phantom coins, not supply.
         c.correct_balance(alice(), U128(100));
-        assert_eq!(c.balance_of(&alice()), 200);
-        assert_eq!(c.total_supply, 2000);
+        assert_eq!(c.balance_of(&alice()), 260);
+        assert_eq!(c.total_supply, 2000 + 60);
     }
 
     fn dave() -> AccountId {
@@ -1549,6 +1587,79 @@ mod tests {
         );
         assert_eq!(record.total_paid.0, 50);
         assert_eq!(c.balance_of(&bob()), 5000 - 1000 + 50);
+    }
+
+    #[test]
+    fn buyer_does_not_inherit_seller_income() {
+        let mut c = setup();
+        testing_env!(ctx(alice(), DAY_NS).build());
+        c.seed_bankroll(carol(), U128(2000));
+        c.list_good("stall-1".to_string(), U128(500));
+        // Two days pass; stall-1 (60/day) accrues 120 under Alice.
+        testing_env!(ctx(carol(), 2 * DAY_NS).build());
+        c.buy_good("stall-1".to_string());
+        // Alice got the 500 sale price + the 120 accrued income.
+        assert_eq!(c.balance_of(&alice()), 500 + 120);
+        // Carol owns it now; nothing has accrued since the purchase.
+        let good = c.get_good("stall-1".to_string()).unwrap();
+        assert_eq!(good.owner_id, carol());
+        assert_eq!(c.get_income_accrued("stall-1".to_string()).0, 0);
+    }
+
+    #[test]
+    fn auction_winner_does_not_inherit_seller_income() {
+        let mut c = setup();
+        testing_env!(ctx(alice(), DAY_NS).build());
+        c.seed_bankroll(bob(), U128(2000));
+        let id = c.open_auction("stall-1".to_string(), U128(300), 180);
+        testing_env!(ctx(bob(), DAY_NS + 10_000_000_000).build());
+        c.place_bid(id, U128(300));
+        // Settle two days after creation; stall-1 accrued 120 under Alice.
+        testing_env!(ctx(alice(), 2 * DAY_NS).build());
+        let winner = c.settle_auction(id);
+        assert_eq!(winner, Some(bob()));
+        // Alice got the 300 winning bid + the 120 accrued income.
+        assert_eq!(c.balance_of(&alice()), 300 + 120);
+        // Bob owns it now; nothing accrued since the settlement.
+        assert_eq!(c.get_income_accrued("stall-1".to_string()).0, 0);
+    }
+
+    #[test]
+    fn prize_pool_with_balance_rolls_over_when_no_eligible_owners() {
+        let mut c = setup();
+        // Give the pool a balance without any non-house owner.
+        c.prize_pool = 200;
+        // Start season 1, then move past its end.
+        testing_env!(ctx(alice(), DAY_NS).build());
+        assert_eq!(c.payout_prize_pool(), None);
+        testing_env!(ctx(alice(), 2 * DAY_NS + 1).build());
+        let record = c.payout_prize_pool().expect("payout should happen");
+        assert_eq!(record.season_number, 1);
+        assert!(record.winners.is_empty());
+        assert_eq!(record.total_paid.0, 0);
+        // The pool is NOT cleared — it rolls over to season 2.
+        assert_eq!(c.get_prize_pool().0, 200);
+        assert_eq!(c.get_season_info().season_number, 2);
+    }
+
+    #[test]
+    fn anyone_can_trigger_income_claim() {
+        let mut c = setup();
+        testing_env!(ctx(alice(), DAY_NS).build());
+        c.seed_bankroll(bob(), U128(2000));
+        // Bob buys 2 shares in the relic (200/day).
+        testing_env!(ctx(bob(), DAY_NS).build());
+        c.buy_share("relic-1".to_string());
+        c.buy_share("relic-1".to_string());
+        // Two days pass; accrued 400. Per share 40; bob holds 2 -> 80;
+        // alice keeps 320.
+        testing_env!(ctx(carol(), 2 * DAY_NS).build());
+        // Carol owns nothing — she can still trigger the claim.
+        let got = c.claim_income("relic-1".to_string());
+        assert_eq!(got.0, 320);
+        assert_eq!(c.balance_of(&bob()), 2000 - 200 + 80);
+        // Alice got 200 for the two shares + 320 income.
+        assert_eq!(c.balance_of(&alice()), 200 + 320);
     }
 
     #[test]
