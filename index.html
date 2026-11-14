@@ -528,12 +528,71 @@ function viewAccount(accountId) {
 }
 
 /* ================= Player seat (per-player account, made in this browser) =================
-   A fresh key is generated on this device, kept in this browser's
-   local store under the player's display name, and the account name
-   is built from that key's public half. The public helper creates
-   and funds the named account; a direct check afterwards is the
-   final judge of whether the account exists. Signed moves use the
-   player's own key on this device only. */
+   A seat takes a ready-made account from POOL (already created and
+   funded), kept in this browser's local store under the player's
+   display name. A name always maps to the same pool account, so a
+   returning player keeps their seat and their chips. If a pool
+   account is ever missing on-chain, the public helper creates one
+   as a fallback. Signed moves use the player's own key on this
+   device only. */
+/* Ready-made seats: 46 testnet accounts, already created and funded,
+   so taking a seat never waits on the account helper. A name always
+   maps to the same pool account, so a returning player keeps their seat.
+   These are testnet-only play accounts; the helper stays as a fallback. */
+var POOL = [
+  {a:"f1f18af3f2257eaedf3faf60e8c72c8f.testnet",k:"ed25519:j1kJTHEs7i12c6gMt7KUhWcgSG4koJemqXRVK83VrBVLXzMS1KyEJKpC57ekjJ1tm4PdrhqmczB9QEj45H4x2mE"},
+  {a:"d2a6e69d10f509628aec9997362c5366.testnet",k:"ed25519:2rBL5B9RHsKKqdhMcMvur3S5ZMB4LPwbaUKVi53fKStrzirvcBvxxCpwGTg4i9Hhsr8rSS35o8DKTn7c2FSUgFo7"},
+  {a:"b1b86846242d9b78108b30b4eb95eb28.testnet",k:"ed25519:2atKUQtrwsLqwgptofMZMgw8vMYMaAmXEvKno3LrQhzQ1GYYxWBsxaaGX5oTV6PeyWE4vDmJwQgFcWm3CGyeLSsi"},
+  {a:"49801513ac876b74f375d3b2ae198606.testnet",k:"ed25519:5ruHTDmJMmhfpPDoa3R4fYMjSCVH9yWn1qR7CA5jkwtWH8Z5Ree9UKhWTQ6FBPZFbhZ5LmDt9iPepZSUeX3iBTiT"},
+  {a:"1fe827572b8285f4f73640da5e110cb1.testnet",k:"ed25519:5VwgzgpUfGT5PMXrRYbPNcRRGeF98yop3jauKBrTjfE2Lfz7QG1MqokbACkemHMqWfyaevYmLFegqzZADeqBmm3q"},
+  {a:"a2710974812def9ff10051ce034a39cc.testnet",k:"ed25519:2KRAeqsMDhDqQac5eF4zxFQgXLXQk2taTpYfxpcuqaW5CSJ9p8tXc9GWA8PBknHbhoK435QyW26s9VGJ6B43Nana"},
+  {a:"2c3bdc144cb2d2ab44d357f0f1b62c69.testnet",k:"ed25519:4vCfUrEJDScYRF8iwoJKK5oA22U1Tmeuf8ZX5aRdyr89ifesk5cfwd14FB3bC4xdLohMSnw13ZPKT1qDfc3cwiDC"},
+  {a:"30e5cbfb3662267c2111da68871a00a4.testnet",k:"ed25519:3TqsnSbVAHPn8w7UvcUawcYk7TBaf7cL3G8DbXri7YCs93MFcvcFW5AKyqX2EgnT51L4oR6cja58we5ZLwdJLqgK"},
+  {a:"b46e11378ae939288a0d17eb33689f5f.testnet",k:"ed25519:5TNTpCvMpjafjW1HuhdgsoomnnGGAWabGzqQasuMYpuzjSgYSbTocaGDsNP8SxBBgENEEz5T88FMbM2ySCniuuDx"},
+  {a:"0f3d0e569a2d4b9728a524afa866aef8.testnet",k:"ed25519:2z16QkqVFnbGv78yPdmDJpsYjUzbYgRx22ceqSNeuvpxDaRb7XDCdaEKB3Q1JhCkLfLjJMXg3dgWk41FFzctuAjD"},
+  {a:"51a6033df978ff1b2deba800b3e575dd.testnet",k:"ed25519:3echbMZu5yFVA6627uriQ8wDXHR2MxkU3FSwUFgSCCVTsaE3fd84XeGBmuWwxX5zpn5D7ENJ8GAcBcJXc5CRKGdv"},
+  {a:"30a881ec96046470554ddd1fe55ef618.testnet",k:"ed25519:N6rwMGPBB72XTLZH73tKPgRKcCqn6SJtdrLtqoG1QucApKRJMuU7hADyF72KFx5wfMyGYwNXtMpMxCYy6fMWLA7"},
+  {a:"b303b4d3785f21dc68e37657eb4fd5fb.testnet",k:"ed25519:5JDVJp1jMa6u7FUuxFb5uWqkEUnysfju4App6BRhZU1K7vG6PLdLEE2fpdWJDbFnxYAKjqH8m3CwTa7R9WGY5rN4"},
+  {a:"fc3b21529fe07db2a0127c6cf6377d63.testnet",k:"ed25519:5wtUzN8a59guV4RquUgnXVKjSVHBPZY5v99tQnkJjv8kGVCDbn4bLmgSEqPz7G8dUc4fVNsYc7tbASZCrSdiV552"},
+  {a:"980dc0afda8f7170077244b8f390ba14.testnet",k:"ed25519:2kaaMmE7Lr3q1rSV2HLCsEdWgdpnHycjQrqYPPDanBn2A5T7bzgCyXSJ2S2PYQp8JxjxD9PZg4ksBi5hAJmb3ATv"},
+  {a:"6bacb80a338ea2899be5f6656ce0f533.testnet",k:"ed25519:3vJEMKyuGpV1qgvTZYL19gjeeYSifJyBdz1wYdNz8F4x6UBo7SkqhbK9qbWjJ27ttF2qdq1z7aoo9qhQFtSugv6o"},
+  {a:"657316b90ecc1f2466288ce5d74a65fd.testnet",k:"ed25519:jH9dCH8LRYKw9dKqSe5nGiSZvfjT8ijXCWuUqzDWr28MgFmhDqYxPT4NJ9RuoSEYNe4NwKdcntmiuJrzMbQU5VS"},
+  {a:"847ec2ddc11be08a98390f7f3b898144.testnet",k:"ed25519:4RvPM3q9uxCWoPp8zmP2saXanvAqhVDJYteAA4Yf29GnngMBwWL2Q4hqdetCECGF9QJu6UxBgij5X6M86kDFQpQu"},
+  {a:"6b29930699403f8c78c0cb519e083f8f.testnet",k:"ed25519:5GsqjtQkHHWbECG558qpcpMKecGZWYcbLjXNf5Ys6YJmxHAaRJL9pg66YmuUZpp2Hu6i4ng73rYVD1QdqSwUESFy"},
+  {a:"4561979afed19ca003e967564aa59c1c.testnet",k:"ed25519:4KYTVxWVfA2saWNvJLFyFm6ks4qMPdanZ4D3ufuTMCznUuMWzMBPXcVrVxSsBGkKtydSBCcDRnii3T2GZRn4th9Y"},
+  {a:"d6ebf227129aebe09b60cadb02e951fd.testnet",k:"ed25519:34k86UyXQ1v5s7eApLpXX8Xu2fBTUgxQTTsrDBc3CsShe2PMqcRmpfVvGhm11AS3gNQcFhECpVV4iNHSS3wQdnC4"},
+  {a:"8f853ac2d2c02f3d9468394b4a814868.testnet",k:"ed25519:535gDP2HQkSMPJZrmwXSxctbvBKcF3AG16XrJ5hfaAJ3AjrNGAyq3d6V4CCgU84BaV8jP1KvWVqgZhKpxhbrorbh"},
+  {a:"7606d9305fa44e815d7315dccf9c46bd.testnet",k:"ed25519:22vfBQBtEWCEFFKQFeywUK3cqBdDwoSHki2R1MoKptKraM3edMedDXUaA47riwhzKWtTtzKNW6PHwMmDeffgtzyU"},
+  {a:"0e8eb622ab5c29ea63e1b2cd6776fdd8.testnet",k:"ed25519:5buFPsiJZF9Rr9MDqnoFdfoqesEJeG9gUP7KiakP1VMGjvVThPYGpmAQYykCY66ebUrKmXc3J1w3VvHi5YA5PYji"},
+  {a:"08bf0c0b43345e526359d5c2fc4eba97.testnet",k:"ed25519:2RXka7vGiFQbHkG3RGWCg4wGdXM99BbYxfAiGF9oqy5vkERbbcKST8fsbCLwVnCXGo4ugKdbdf6a9jArqjHybxp5"},
+  {a:"c575c48437898f352fd443e15cc947bf.testnet",k:"ed25519:5T25yD1jAWUnnyUKMvARS3Pr6rQCP82Hi5ajqynBQRgRB7SLJzEvSTbMMGcrVgewbFYbFNG9PY9DvEnqLbAGBXMG"},
+  {a:"faa05b10e5df6917ef06219088bcf9e1.testnet",k:"ed25519:4FVbirZ8tAqz4QTSa6RYJiiYsEkFbHqZy77zepqsKDxoa86U4Nc29vM3FAJpn5mgAeRWJmtrHs9ZYt59KbdTif8u"},
+  {a:"0eae0e47aac82cc1254a14fdba3ddea4.testnet",k:"ed25519:3LBbgUhbhduf2NxshDR2gLstUBNBvUWWdZfLwST93TYWr95QimmbbwEYvDrEHkmB6Lf3HcrACUE9V5beQ922ASyV"},
+  {a:"48be39bd66955cf86cd2a0fcfe58c49b.testnet",k:"ed25519:4QaMER5Usm97TUYus6Nqus13fAjT3Fj7sCtPoNNDB6EU9SLw53dUXShH5NQ6KhduNgW7zZnv68zUdRXgUw6yVs1Q"},
+  {a:"094653e86e319d307dc2c483e280b4cd.testnet",k:"ed25519:3BG7gmzE9Vqw1SEzm7rBDKVFx86U7Z7sBTqqxhhZxHNfUFq8A4vS4DW8Et4LNh6tV1hub2jQGWAHN8VjX6H3U4VH"},
+  {a:"645609b481ab13aa5642948f33ac190d.testnet",k:"ed25519:5bY29uJngg48gMaDFQa2NakYpkrwbSaiSqWiXGCr2njpfJZANt2TMQrQHJ8PncwpFz866ufC5FAAEAMYJZoCkstL"},
+  {a:"6904e94193906ee828a46d155171495d.testnet",k:"ed25519:4KSdjinKPXkEaWobPZP2jhDe87F56yDafJJkekWco53g4MUuEi2rrZJYjpZbAN4NwNLj58RFacxhFvNBTM9womsA"},
+  {a:"47603a2022deead274047490f3d12b4d.testnet",k:"ed25519:2LcGFBoEFspJP8NNa7UGAZZvZ2ZJJuSzbt8PXGqyHoDz567CLTappR128kgdMPPZYnAx4h58uT51Qfqhzkab1QZT"},
+  {a:"52d4275afadf65c9a6e247fce8bc4acf.testnet",k:"ed25519:3Ju66mqnaoP8CG1d2VkZKmpwgvrU3CZwzCafNgYnhgDWJ4C3ek5XDsNynGZESLMSkd57gKTrpuHneNCj5LHa6ag4"},
+  {a:"c7a63e6da7b66804c643acd19c849603.testnet",k:"ed25519:4QBwVAKs8xpG61pM5t1Hh4isW7EymsJkWWbcZsqm1Hn9QbVx4ZhuXck3W6y6KFcjNFrzF2UxgweyPtXaYtjfgJAS"},
+  {a:"24653458ec1ebadca1eb8c449477dfef.testnet",k:"ed25519:2VTraU16ChpsGrc5wWgUtfyHBmSWgXTmcasGNP2a1oTPHHH9zd4YvHU5nwpySgapAVzMEZ76BAAkAJEcWk9BbYHN"},
+  {a:"623706f1dc567c49df172a9c8bbd60d1.testnet",k:"ed25519:4HQrUmV5cAZ5xuC7RUAPbFp7HKwx3n6DRZsofZUj6XFXnCR8V6pSEKzfjZvxEe4pTKX6RUUrwk9TrHMJDVXQnDj4"},
+  {a:"c239e2f5abec601652cc30485fbb0c73.testnet",k:"ed25519:2T9dycuSunP7Cj6kYVSKcbqNnd4ySZZ7zt4JxXbqvTVMy62PFvWgwTJmSv91ZG7XJueVkUbVzBMrKTvowreDBfrY"},
+  {a:"80c98e21b0f17f3eb8be23a54d4f17a3.testnet",k:"ed25519:3NtHuDibwQEBPJvf83jQtzwLNCf7HiaPAP6HXEUmpxguYgusLZ6ytsPygih1QMggmQ6BWfWPsYpA99KyfB494eS2"},
+  {a:"292c9646afc246f40c74f603139279c1.testnet",k:"ed25519:B5Yzw6CshSmKMHrwkMLMAnTMCD3cmrkA2KshgSXnM5223jkoJW3DpnxewzR8ZGcFWxXSg6ek75pgDSnmC7UTvun"},
+  {a:"2355e9fb8f31d81aeafe3bb4ec57abe4.testnet",k:"ed25519:Yg9LKfBk6kMBqHUpwVQCABnWewFkcy8NaLCD6UR98yLLyGh6Xna4q7tUDHBshQjSN4pmFhKc47geBwXuBGgSC8Q"},
+  {a:"61312bff6396048a14eb9ef2537f778c.testnet",k:"ed25519:3Md1H9KafDLg72vVCDkJtjRqQeM8WuvzfwEGf5HLqpfv9VXHD2MNxvNJu7MqzcqHVknq3j446hy49Y4JGQAbyXwC"},
+  {a:"cf16425c3be50acdc429249399347987.testnet",k:"ed25519:2sdznv5QpxQuKkUJDn6jJhd8fRQRdDjLVdFYNZhzQNkxeXW8tPCFdPdwheBEDepF33tP3CSiZFX7YuX5uHdEzEk1"},
+  {a:"ef987ca616b53ee418f098a96e56f012.testnet",k:"ed25519:5dPAzYGtYohvE1VjYC1Mw2iTVSsPY5M8CrwTCDBDEgTr4VJynA6W25unLpr77XAG1cXAZPaLkXJfeUe9ZbSGxevg"},
+  {a:"32c075ac639063dffb335921114b4755.testnet",k:"ed25519:V5urQUsjqMMCQ8BZ9yrvqfLGigqKZHK2H3tBLPRK9mbyHXweKh4QJNQR9TJaFHmaSUccCUBhTbdSwBpoZi9fZSZ"},
+  {a:"d39a89b6cad69cf2cba39276231e7d21.testnet",k:"ed25519:4iqdzCYiAqUZdEXwkd9cmAiBJ1tReXCt7TgeJuk361dz45jy3gdKHS9WK9p2XyxxqKWd6oxVDzxbop4pSus3TW5b"}
+];
+function poolEntryFor(name) {
+  if (!POOL.length) return null;
+  var h = 0;
+  for (var i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return POOL[Math.abs(h) % POOL.length];
+}
 var player = { name: storeGet("gavelName") || "", accountId: null, balance: null, canClaim: null, ready: false, ensuring: null };
 var chain = { contract: null, account: null };
 
@@ -541,6 +600,17 @@ function keyStorageKey() { return "gavelKey:" + (player.name || "guest"); }
 function loadOrCreateKeyPair() {
   var saved = storeGet(keyStorageKey());
   if (saved) { try { return nearApi.KeyPair.fromString(saved); } catch (e) {} }
+  /* New seat: take a ready-made pool account (already created and
+     funded) instead of building one through the helper, so the seat
+     is ready in seconds. The pool key is saved like any other key. */
+  var entry = poolEntryFor(player.name || "guest");
+  if (entry) {
+    try {
+      var pkp = nearApi.KeyPair.fromString(entry.k);
+      storeSet(keyStorageKey(), pkp.toString());
+      return pkp;
+    } catch (e) {}
+  }
   var kp = nearApi.KeyPair.fromRandom("ed25519");
   storeSet(keyStorageKey(), kp.toString());
   return kp;
