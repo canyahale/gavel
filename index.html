@@ -218,7 +218,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
   <p class="bid-msg" id="bid-msg" aria-live="polite"></p>
   <div class="balance-row">
     <span class="pill">Your coins: <b id="bal-v">—</b></span>
-    <button class="btn btn-dark" id="btn-chips" type="button">Claim 500 free chips</button>
+    <button class="btn btn-dark" id="btn-chips" type="button">Claim 1500 free chips</button>
     <span class="note" id="chips-note">Free chips once a day. Bids are held while you are the highest bidder and returned in full the moment someone outbids you.</span>
   </div>
   <p class="note" id="bid-min-note">Bids must beat the current bid by at least 25 coins. A bid in the last 30 seconds adds 30 seconds to the lot.</p>
@@ -1794,10 +1794,10 @@ function updateBalanceUI() {
   var chips = el("btn-chips");
   if (player.accountId) {
     chips.disabled = player.canClaim === false;
-    chips.textContent = player.canClaim === false ? "Chips claimed for today" : "Claim 500 free chips";
+    chips.textContent = player.canClaim === false ? "Chips claimed for today" : "Claim 1500 free chips";
   } else {
     chips.disabled = false;
-    chips.textContent = "Claim 500 free chips";
+    chips.textContent = "Claim 1500 free chips";
   }
 }
 function renderBidders() {
@@ -2223,16 +2223,16 @@ function boot() {
       (function attempt() {
         tries++;
         signedCall("claim_faucet", {}).then(function () {
-          setBidMsg("500 free chips are yours. Raise your paddle!", "ok");
+          setBidMsg("1500 free chips are yours. Raise your paddle!", "ok");
           sound.win();
           setTimeout(poll, 1200);
           poll();
         }, function (err) {
           var msg = String((err && err.message) || "");
           if (/already claimed/i.test(msg)) {
-            setBidMsg("You already claimed your free chips today — come back tomorrow for 500 more.", "");
+            setBidMsg("You already claimed your free chips today — come back tomorrow for 1500 more.", "");
             btn.disabled = false;
-            btn.textContent = "Claim 500 free chips";
+            btn.textContent = "Claim 1500 free chips";
             poll();
             return;
           }
@@ -2243,7 +2243,7 @@ function boot() {
           }
           setBidMsg("Still setting up your chips — give it a moment and tap Claim again.", "");
           btn.disabled = false;
-          btn.textContent = "Claim 500 free chips";
+          btn.textContent = "Claim 1500 free chips";
           poll();
         });
       })();

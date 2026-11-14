@@ -26,7 +26,7 @@ The only things NOT to decide alone: do not submit to the hackathon API (needs h
 - Bidders: Mara gavel-mara-y08d0h.testnet (3000), Bram gavel-bram-hag65w.testnet (2500), Pip gavel-pip-76rddq.testnet (1200).
 - Keys: ~/workspace/gavel/.testnet-accounts.json (chmod 600).
 - Contract tests: 5/5 pass. WASM sha256 b32f3fceb2b5d40362e26f84d15353ced16956a8bb2fbafafd0060e6cbb77343.
-- Faucet 500/day. Min bid increment 25. Anti-snipe +30s. Sale fee 5% to prize pool. Shares 10 per good at 100, pro-rata income.
+- Faucet 1500/day. Min bid increment 25. Anti-snipe +30s. Sale fee 5% to prize pool. Shares 10 per good at 100, pro-rata income.
 
 ## Files
 - Contract: ~/workspace/gavel/contract/src/lib.rs
@@ -101,3 +101,5 @@ The biggest honest gap in v1 is closed. Daily seasons (24h). When a season ends,
 - Live site is https://gavel-phi-snowy.vercel.app/ (Isaiah's). After the repo update, check whether it picks the new code up (if it auto-deploys from canyahale/gavel) — if not, it needs a redeploy from the repo.
 - Verify live in a real browser: room loads, lot runs, bids land (player + agents), hammer falls, ownership/income update, faucet works, shares/re-listing work, audio toggle works, Prize tab shows pool/countdown/leaderboard, no banned words visible. Re-test the chip claim from a real browser (it failed in the cloud browser; verify on a phone).
 - Do NOT submit to the hackathon API.
+
+- **Faucet raised 500 -> 1500 (14 Nov 2026 ~09:20 WAT).** A fresh player with 500 coins could not win a bid: lots start at 500-800 and the agents push them up fast, so only the cheapest stall-1 (300) was reliably affordable. Isaiah asked to raise it to 1500. Contract `FAUCET_AMOUNT` 500 -> 1500 (`contract/src/lib.rs`), unit test updated (1500, then 3000 next day), `cargo test` 12/12, WASM rebuilt (225,593 bytes). Redeployed to the same account (tx A1v6yaVCAdoYL7f9bFB2gFqLdcrjSaHuJSr18vRhWuAn) — state preserved exactly (balances, supply 20,353, pool 5,042, goods 8, auctions 123, season 1 intact). Verified on-chain: fresh account faucet1500-4fczjr.testnet claimed 1500 (tx Cxiiq7ZSmuZ3P3Dvwfgt4rvkrWAkf5PdSWaukcE6dGCQ). Frontend + README + DEMO_VIDEO updated to 1500. Script: `scripts/redeploy_faucet1500.js`. Note: 3x the daily minting raises supply growth; the daily season bounds it. The bot was NOT stopped for the redeploy (deploy is atomic; a tick colliding would just fail and retry).

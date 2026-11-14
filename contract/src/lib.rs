@@ -11,7 +11,7 @@
 //! any of that.
 //!
 //! Core rules:
-//! - Faucet: 500 Gavel Coins once per day per account.
+//! - Faucet: 1500 Gavel Coins once per day per account.
 //! - Goods (stall, route, recipe, relic) earn income every day. The
 //!   owner claims it; each of the 10 shares in a good earns 1/10 of
 //!   the income, so shareholders are paid pro-rata and the owner keeps
@@ -47,7 +47,7 @@ use near_sdk::{env, near, AccountId, NearToken, PanicOnDefault};
 /// The single Gavel Coin token id (NEP-245).
 pub const GAVEL_TOKEN_ID: &str = "gavel";
 /// Faucet grant, once per day per account.
-pub const FAUCET_AMOUNT: u128 = 500;
+pub const FAUCET_AMOUNT: u128 = 1500;
 /// One day, in nanoseconds.
 pub const DAY_NS: u64 = 24 * 60 * 60 * 1_000_000_000;
 /// Minimum bid increment, in Gavel Coins.
@@ -613,7 +613,7 @@ impl Contract {
 
     // ─── Faucet ──────────────────────────────────────────────────
 
-    /// Gives the caller 500 Gavel Coins once per day.
+    /// Gives the caller 1500 Gavel Coins once per day.
     /// Fails if already claimed today.
     pub fn claim_faucet(&mut self) -> U128 {
         let caller = env::predecessor_account_id();
@@ -1256,7 +1256,7 @@ mod tests {
         let mut c = setup();
         testing_env!(ctx(bob(), DAY_NS).build());
         let bal = c.claim_faucet();
-        assert_eq!(bal.0, 500);
+        assert_eq!(bal.0, 1500);
         // Second claim same day fails.
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             c.claim_faucet();
@@ -1265,7 +1265,7 @@ mod tests {
         // Next day works.
         testing_env!(ctx(bob(), 2 * DAY_NS).build());
         let bal = c.claim_faucet();
-        assert_eq!(bal.0, 1000);
+        assert_eq!(bal.0, 3000);
     }
 
     #[test]
