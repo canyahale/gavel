@@ -31,6 +31,7 @@ h1.wordmark span{color:#e6b84e}
 .btn{border:0;border-radius:12px;padding:13px 18px;font-weight:800;font-size:16px;min-height:52px;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
 .btn-gold{background:#e6b84e;color:#231a04}
 .btn-gold:hover{background:#f0c663}
+.btn-ghost{background:transparent;color:#f7e3ac;border:1px solid #6b4a26;min-height:40px;padding:8px 14px;font-size:.9rem}
 .btn-dark{background:#3a2417;color:var(--ink);border:1px solid #6b4a26}
 .btn-dark:hover{background:#4a2f1d}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
@@ -67,7 +68,7 @@ h1.wordmark span{color:#e6b84e}
 .sold-banner .sold-who{font-weight:800;margin-top:6px}
 .bubble{position:absolute;z-index:6;transform:translate(-50%,-100%);background:#fff8e6;color:#231a04;border:2px solid #e6b84e;border-radius:14px;padding:6px 11px;font-weight:800;font-size:.92rem;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.45);pointer-events:none}
 .face{position:absolute;z-index:5;transform:translate(-50%,-100%);text-align:center;pointer-events:none}
-.face img{width:48px;height:48px;display:block;margin:0 auto}
+.face img{width:56px;height:56px;display:block;margin:0 auto;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
 .face span{display:inline-block;background:rgba(20,11,6,.88);color:#f7e3ac;border:1px solid #e6b84e;border-radius:10px;padding:2px 9px;font-weight:800;font-size:.8rem;white-space:nowrap}
 .bubble:after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:#e6b84e;border-bottom:0}
 .bubble[hidden]{display:none}
@@ -190,6 +191,7 @@ footer{margin-top:22px;text-align:center;color:#8a6f52;font-size:.85rem}
       <button class="btn btn-gold" id="btn-seat" type="button">Take your seat</button>
     </div>
     <p class="note" id="seat-msg" aria-live="polite"></p>
+    <p class="note"><button class="btn btn-ghost" id="btn-reset-seat" type="button">Start fresh — new seat</button></p>
   </div>
   <div id="seat-done" hidden>
     <p style="font-weight:800;margin:4px 0">You are seated as <span id="seat-name-v"></span>.</p>
@@ -581,12 +583,17 @@ function ensureSeat() {
     var accountId = accountIdFor(kp);
     player.accountId = accountId;
     storeSet("gavelAccount:" + (player.name || "guest"), accountId);
-    var info = await viewAccount(accountId);
+    var info;
+    try {
+      info = await viewAccount(accountId);
+    } catch (e) {
+      throw new Error("The room could not check your seat — the network is not answering. Check your connection and tap again.");
+    }
     if (!info) {
       await createAccount(accountId, kp.getPublicKey().toString());
-      info = await waitForAccount(accountId, 25);
+      info = await waitForAccount(accountId, 40);
     }
-    if (!info) throw new Error("Your seat could not be set up. Check your connection and try again.");
+    if (!info) throw new Error("The room could not make your account — it did not appear in time. Tap again, or tap Start fresh below for a brand new seat.");
     var keyStore = new nearApi.keyStores.InMemoryKeyStore();
     await keyStore.setKey("testnet", accountId, kp);
     /* Connect for writes: try every RPC in turn — the first one that
@@ -604,7 +611,7 @@ function ensureSeat() {
         near = cand; account = candAcc; break;
       } catch (e) { lastErr = e; }
     }
-    if (!near) throw lastErr || new Error("Could not reach the room to set up your seat.");
+    if (!near) throw new Error("The room could not connect to set up your seat. Check your connection and tap again.");
     var contract = new nearApi.Contract(account, CONTRACT_ID, {
       viewMethods: ["get_goods", "get_open_auctions", "get_auctions", "get_auction", "get_good", "mt_balance_of", "mt_total_supply", "get_prize_pool", "get_season_info", "get_leaderboard", "get_last_payout", "can_claim_faucet", "get_income_accrued", "get_shares", "get_all_shares"],
       changeMethods: ["claim_faucet", "place_bid", "open_auction", "settle_auction", "claim_income", "buy_share", "sell_share", "list_good", "buy_good", "delist_good"],
@@ -1162,22 +1169,24 @@ function initRoom() {
     }
     var geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    var pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffd9a0, size: 0.035, transparent: true, opacity: 0.55, depthWrite: false }));
+    var pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffd9a0, size: 0.05, transparent: true, opacity: 0.7, depthWrite: false }));
     pts.name = "dust"; scene.add(pts);
     room.dust = pts;
   })();
   /* bidders: Mara left, Pip left-centre, Bram right-centre — front row, facing the podium.
      Spread wide so their name faces never overlap on a phone. Each one is
-     built differently: body, hair, jacket and skin all distinct. */
+     built differently: body, hair, jacket and skin all distinct. Each is
+     turned a little toward the room (rot) so you see their face and
+     shoulder in three-quarter view, not just the back of their head. */
   var spots = [
-    { name: "Mara", x: -2.3, z: 2.7, color: 0xe0533d, opts: { jacket: 0x7e1f1a, shirt: 0xf7e3ac, skin: 0xc98a5e, hair: 0x1c1210, hairStyle: "long", trousers: 0x2a2a30, build: 1.08 } },
-    { name: "Pip", x: -0.8, z: 3.4, color: 0xd9a62e, opts: { jacket: 0x8a6d2a, shirt: 0xe8d9bd, skin: 0xe8b98a, hair: 0x5a3a1a, hairStyle: "cap", trousers: 0x3a3230, build: 0.92 } },
-    { name: "Bram", x: 0.8, z: 3.4, color: 0x4a7fd4, opts: { jacket: 0x2a3a5a, shirt: 0xdfe8f2, skin: 0xd9a986, hair: 0x8a8a8a, hairStyle: "short", trousers: 0x22242c, build: 1.0 } }
+    { name: "Mara", x: -2.3, z: 2.7, rot: -0.5, color: 0xe0533d, opts: { jacket: 0x7e1f1a, shirt: 0xf7e3ac, skin: 0xc98a5e, hair: 0x1c1210, hairStyle: "long", trousers: 0x2a2a30, build: 1.08 } },
+    { name: "Pip", x: -0.8, z: 3.4, rot: -0.35, color: 0xd9a62e, opts: { jacket: 0x8a6d2a, shirt: 0xe8d9bd, skin: 0xe8b98a, hair: 0x5a3a1a, hairStyle: "cap", trousers: 0x3a3230, build: 0.92 } },
+    { name: "Bram", x: 0.8, z: 3.4, rot: 0.4, color: 0x4a7fd4, opts: { jacket: 0x2a3a5a, shirt: 0xdfe8f2, skin: 0xd9a986, hair: 0x8a8a8a, hairStyle: "short", trousers: 0x22242c, build: 1.0 } }
   ];
   spots.forEach(function (s) {
     var f = makeFigure(s.color, s.name, s.opts);
     f.position.set(s.x, 0, s.z);
-    f.rotation.y = Math.PI; /* face the podium (away from camera) */
+    f.rotation.y = Math.PI + (s.rot || 0); /* three-quarter view: face the podium, angled toward the room so you see their face */
     f.scale.set(1.3, 1.3, 1.3);
     f.userData.label.visible = false; /* the animated face above carries the name */
     scene.add(f);
@@ -1318,10 +1327,16 @@ function animateRoom() {
     }
   }
   if (room.lotGroup && room.lotGroup.children.length) room.lotGroup.rotation.y += dt * 0.7;
-  /* dust motes drift slowly in the warm light */
+  /* dust motes drift in the warm light — big enough to see, always moving */
   if (room.dust) {
-    room.dust.rotation.y += dt * 0.008;
+    room.dust.rotation.y += dt * 0.02;
     room.dust.position.y = Math.sin(t * 0.12) * 0.15;
+    room.dust.position.x = Math.sin(t * 0.07) * 0.4;
+  }
+  /* auctioneer taps the gavel between lots, so the room never sits still */
+  if (!state.open.length && room.gavel && room.strikeT < 0 && t > (room.nextTap || 0)) {
+    room.nextTap = t + 7 + Math.random() * 5;
+    strikeGavel();
   }
   /* gavel strike animation */
   if (room.strikeT >= 0) {
@@ -1365,7 +1380,7 @@ function animateRoom() {
     }
     u.headYaw += (u.headYawTarget - u.headYaw) * Math.min(1, dt * 3);
     /* breathing — chest rises and falls */
-    var breath = Math.sin(t * 1.3 + u.breathPhase) * 0.018;
+    var breath = Math.sin(t * 1.3 + u.breathPhase) * 0.03;
     if (u.torso) { u.torso.scale.y = 1 + breath; u.torso.scale.x = 1 + breath * 0.5; u.torso.scale.z = 1 + breath * 0.5; }
     /* arms: raise the paddle to bid, clap to cheer, lift the wrist to check */
     var r = u.raise, c = clap;
@@ -1388,7 +1403,7 @@ function animateRoom() {
       if (h >= 0.7) { u.hopT = -1; f.position.y = 0; }
     }
     /* idle sway + low-budget dimming */
-    var sway = Math.sin(t * 1.1 + u.swayPhase) * 0.02;
+    var sway = Math.sin(t * 1.1 + u.swayPhase) * 0.035;
     f.rotation.z = sway - u.slump * 0.06;
     var targetOp = u.dim ? 0.55 : 1;
     f.traverse(function (o) { if (o.material && o.material.transparent !== undefined) { o.material.transparent = true; o.material.opacity += (targetOp - o.material.opacity) * Math.min(1, dt * 3); } });
@@ -1988,15 +2003,37 @@ function takeSeat() {
   var msg = el("seat-msg");
   msg.textContent = "Setting up your seat… this takes a few seconds.";
   el("btn-seat").disabled = true;
-  ensureSeat().then(function () {
-    showSeated();
-    msg.textContent = "";
-    setBidMsg("You are seated, " + name + ". Claim your free chips, then raise your paddle.", "ok");
-    poll();
-  }, function () {
-    msg.textContent = "Your seat could not be set up — the room could not make your account. Check your connection and tap again.";
-    el("btn-seat").disabled = false;
-  });
+  var tries = 0;
+  (function attempt() {
+    tries++;
+    ensureSeat().then(function () {
+      showSeated();
+      msg.textContent = "";
+      setBidMsg("You are seated, " + name + ". Claim your free chips, then raise your paddle.", "ok");
+      poll();
+    }, function (err) {
+      if (tries < 2) {
+        msg.textContent = "Setting up your seat… (try " + (tries + 1) + " of 2)";
+        setTimeout(attempt, 2000);
+        return;
+      }
+      msg.textContent = (err && err.message) || "Your seat could not be set up — the room could not make your account. Check your connection and tap again.";
+      el("btn-seat").disabled = false;
+    });
+  })();
+}
+/* Start fresh: wipe the stored seat (name, account and key) and reload,
+   so a stuck seat gets a brand new account instead of retrying a broken one. */
+function resetSeat() {
+  var name = (el("inp-name").value || "").trim() || player.name || "guest";
+  try {
+    localStorage.removeItem("gavelName");
+    localStorage.removeItem("gavelAccount:" + name);
+    localStorage.removeItem("gavelKey:" + name);
+    localStorage.removeItem("gavelAccount:guest");
+    localStorage.removeItem("gavelKey:guest");
+  } catch (e) {}
+  location.reload();
 }
 function boot() {
   /* sound toggle (persisted, on by default). UI only here — no audio
@@ -2022,6 +2059,7 @@ function boot() {
   /* seat */
   if (player.name) { el("inp-name").value = player.name; }
   el("btn-seat").addEventListener("click", takeSeat);
+  el("btn-reset-seat").addEventListener("click", resetSeat);
   el("inp-name").addEventListener("keydown", function (e) { if (e.key === "Enter") takeSeat(); });
   var savedAccount = player.name ? storeGet("gavelAccount:" + player.name) : null;
   if (player.name && savedAccount) {
