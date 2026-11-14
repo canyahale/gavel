@@ -40,13 +40,15 @@
 
 <footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
 </div>
+<script src="near-api-js.min.js"></script>
 <script src="gavel-shared.js"></script>
 <script>
 "use strict";
 
 /* ================= The Gavel — Market page ================= */
-/* Plain JS, no libraries. Reads through gavel-shared.js, acts through
-   the relay (signedCall) — this page never sees a key. Player-facing
+/* Plain JS, plus near-api-js for signing. Reads through gavel-shared.js,
+   acts through signedCall — this page signs with the player's own key,
+   made in their browser. Player-facing
    words only: coins, goods, the room. */
 
 function el(id) { return document.getElementById(id); }

@@ -30,12 +30,13 @@
 
 <footer>The Gavel — a live auction house game. The room never sleeps: lots open, the regulars bid, and the hammer falls.</footer>
 </div>
+<script src="near-api-js.min.js"></script>
 <script src="gavel-shared.js"></script>
 <script>
 "use strict";
 
 /* Goods & their history — read-only page. No moves are made here,
-   only reads, so this page never calls the relay. */
+   only reads, so this page never signs a move. */
 
 function el(id) { return document.getElementById(id); }
 
@@ -137,7 +138,7 @@ function renderGoods(data) {
 }
 
 function refreshBalance() {
-  if (!player.ready || !player.accountId) return;
+  if (!player.accountId) return;
   rpcCall("mt_balance_of", { account_id: player.accountId, token_id: TOKEN_ID }).then(function (bal) {
     el("pill-balance-v").textContent = fmt(bal);
   }, function () {});
