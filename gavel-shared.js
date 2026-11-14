@@ -51,7 +51,7 @@ function rpcCallVia(rpcUrl, methodName, argsObj) {
   return fetchWithTimeout(rpcUrl, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: "gavel-read", method: "query", params: { request_type: "call_function", account_id: CONTRACT_ID, method_name: methodName, args_base64: b64, finality: "optimistic" } })
-  }, 20000).then(function (resp) { return resp.json(); }).then(function (json) {
+  }, 30000).then(function (resp) { return resp.json(); }).then(function (json) {
     if (json && json.result && json.result.result) {
       var bytes = json.result.result, text = "";
       for (var i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
@@ -60,12 +60,25 @@ function rpcCallVia(rpcUrl, methodName, argsObj) {
     throw new Error("read failed");
   });
 }
-function rpcCall(methodName, argsObj) {
+function rpcCall(methodName, argsObj, attempt) {
+  attempt = attempt || 0;
   return new Promise(function (resolve, reject) {
     var settled = false, failed = 0, lastErr = null;
     RPC_URLS.forEach(function (url) {
       rpcCallVia(url, methodName, argsObj).then(function (v) { if (!settled) { settled = true; resolve(v); } },
-        function (err) { lastErr = err; failed += 1; if (failed >= RPC_URLS.length && !settled) { settled = true; reject(lastErr || new Error("read failed")); } });
+        function (err) {
+          lastErr = err; failed += 1;
+          if (failed >= RPC_URLS.length && !settled) {
+            /* One retry after a short pause: the live browser's
+               network path to the RPC endpoints can drop a whole
+               round of reads, and a single retry recovers it. */
+            if (attempt < 1) {
+              setTimeout(function () { rpcCall(methodName, argsObj, attempt + 1).then(resolve, reject); }, 2000);
+            } else {
+              settled = true; reject(lastErr || new Error("read failed"));
+            }
+          }
+        });
     });
   });
 }
@@ -73,7 +86,7 @@ function viewAccountVia(rpcUrl, accountId) {
   return fetchWithTimeout(rpcUrl, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: "gavel-view", method: "query", params: { request_type: "view_account", finality: "optimistic", account_id: accountId } })
-  }, 20000).then(function (resp) { return resp.json(); }).then(function (json) {
+  }, 30000).then(function (resp) { return resp.json(); }).then(function (json) {
     if (json && json.result) return json.result;
     var msg = json && json.error ? String(json.error.name || "") + " " + String(json.error.message || "") : "";
     if (/not exist|UNKNOWN_ACCOUNT|unknown account/i.test(msg)) return null;

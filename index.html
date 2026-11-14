@@ -1433,6 +1433,9 @@ var settledAttempted = {};
 var myBidAuctions = {};
 var passedLotId = null;
 var pollTimer = null;
+var fastTimer = null;
+var fullPollBusy = false;
+var fastPollBusy = false;
 var currentLotCache = null;
 
 function currentLot() {
@@ -1475,6 +1478,10 @@ function whyText(good, price) {
 }
 
 function poll() {
+  /* Never overlap polls: a slow read must not pile up behind the
+     next tick, or the bid on screen lags a minute behind the room. */
+  if (fullPollBusy) return Promise.resolve(false);
+  fullPollBusy = true;
   var calls = [
     rpcCall("get_goods", {}).catch(function () { return null; }),
     rpcCall("get_open_auctions", {}).catch(function () { return null; }),
@@ -1510,10 +1517,39 @@ function poll() {
     }
     state.loaded = true;
     onStateChanged();
+    fullPollBusy = false;
     return true;
   }, function () {
     el("room-status").textContent = "The room is reconnecting… your seat is safe.";
+    fullPollBusy = false;
     return false;
+  });
+}
+/* Fast bid poll — every 2 seconds, only the open lots. The current
+   bid lives here, so this is what makes the podium reflect a bid
+   within seconds of it landing, instead of waiting on the heavy
+   full read (which also fetches every past auction). */
+function pollFast() {
+  if (fastPollBusy) return;
+  fastPollBusy = true;
+  rpcCall("get_open_auctions", {}).then(function (open) {
+    fastPollBusy = false;
+    if (!open) return;
+    state.open = open;
+    var lot = currentLot();
+    currentLotCache = lot;
+    /* New bids on the open lots: announce them and flash on outbid,
+       the same as the full poll does. */
+    state.open.forEach(function (a) {
+      var prev = prevAuctions[a.auction_id];
+      if (prev && a.bids_count > prev.bids && String(a.current_bid) !== String(prev.bid)) onNewBid(a);
+      prevAuctions[a.auction_id] = { bids: a.bids_count, bid: a.current_bid, bidder: a.current_bidder, settled: a.settled };
+    });
+    renderHud(lot);
+    renderBidders();
+    updateBalanceUI();
+  }, function () {
+    fastPollBusy = false;
   });
 }
 function onStateChanged() {
@@ -2183,9 +2219,13 @@ function boot() {
   });
   /* simulation */
   el("btn-sim").addEventListener("click", runSimulation);
-  /* live polling — every 4 seconds, plus a fast first load */
+  /* live polling — the fast bid poll every 2 seconds keeps the
+     current bid fresh; the full read every 8 seconds refreshes the
+     market, the bidders and the prize. */
   poll();
-  pollTimer = setInterval(poll, 4000);
+  pollFast();
+  pollTimer = setInterval(poll, 8000);
+  fastTimer = setInterval(pollFast, 2000);
   setBidMsg("", "");
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

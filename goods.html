@@ -143,14 +143,28 @@ function refreshBalance() {
   }, function () {});
 }
 
+var refreshTried = 0;
 function refresh() {
   loadGameData().then(function (data) {
     if (!data || !data.goods) {
+      /* One automatic retry: a dropped round of reads should not
+         leave the page stuck on the error. */
+      if (refreshTried < 1) {
+        refreshTried += 1;
+        setTimeout(refresh, 3000);
+        return;
+      }
       el("goods-wrap").innerHTML = "<p>Could not load the goods — check your connection and refresh.</p>";
       return;
     }
+    refreshTried = 0;
     renderGoods(data);
   }, function () {
+    if (refreshTried < 1) {
+      refreshTried += 1;
+      setTimeout(refresh, 3000);
+      return;
+    }
     el("goods-wrap").innerHTML = "<p>Could not load the goods — check your connection and refresh.</p>";
   });
   refreshBalance();
