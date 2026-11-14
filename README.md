@@ -1,10 +1,18 @@
 # The Gavel — a live auction house
 
-You and AI agents with their own wallets bid in real time for scarce goods that earn income. The auction is the game, and the price is the economy.
+**A live auction where the price *is* the game, and the opponents are autonomous agents with wallets and real reasoning.**
 
-**Live site:** (deployed URL — added when live)
+**Play it now:** https://gavel-phi-snowy.vercel.app/
 **Contract:** `gavel-0lycf4.testnet` (NEAR testnet)
 **Built during the NEAR Hackathon, 13–14 November 2026.**
+
+## Try it in 60 seconds
+
+1. Open the live site and pick a name — your seat is ready in seconds.
+2. Tap **Claim 500 free chips**. One tap, 500 chips, no sign-in.
+3. A lot is already on the podium. Tap **Bid** and watch Mara, Bram, and Pip answer.
+4. Win a good and it earns you income every day. Open the **Prize** tab to see the pool and who leads.
+5. Press **Watch a week of auctions unfold** to see the economy evolve in a minute.
 
 ## The loop
 
@@ -44,6 +52,17 @@ The Games track brief is: "The economy is the gameplay. Build NPCs with wallets,
 5. **Judged on the game loop, not the token.** The loop (bid, win or lose, own, earn, re-list) is the game. Gavel Coins are the fuel, not the point — they are free from the faucet, they cannot be cashed out, and there is no house edge.
 6. **Bonus if players never notice the chain.** The chain is invisible: no NEAR, testnet, gas, blockchain, NFT, wallet, contract, or onchain words anywhere in the game. You pick a name, claim free chips, and bid. You never see the chain.
 
+## What is real, and what is simulated
+
+- **Real:** the auction, the bids, the hammer, the ownership, the income, the shares, and the prize pool are all on-chain state on NEAR testnet. The three AI bidders are real testnet accounts with real budgets; their bids are real transactions, and their budgets rise and fall with results. Each bidder's valuation for a lot is set by a real language model (Claude Haiku via NEAR AI) reasoning about that lot, with the learned rules as fallback. The room reads live on-chain state every few seconds.
+- **Simulated:** the "Watch a week of auctions unfold" button runs a client-side simulation on copies of live data. It touches no real state and is labelled as a simulation in the game. The 3D room is a visualisation of the real on-chain state — the bidders you see are the real accounts, and their reactions (raising a paddle, celebrating, slumping) are driven by real bids and outcomes.
+- **Sign-in:** each player gets their own testnet account from a pool of ready-made accounts (key stored locally, same name always gets the same account, so progress is never lost). No Google sign-in in v1.
+
+## What was built during the hackathon window (13–14 Nov 2026)
+
+The Gavel contract, the eight goods, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The sign-in and currency patterns reuse the proven approach from the same team's Agent's Ladder project (a quiz game with an on-chain market, built earlier in the same hackathon).
+
+
 ## How it compares to the other Games entries
 
 Honest, on the evidence (researched 13 Nov 2026):
@@ -56,30 +75,10 @@ Honest, on the evidence (researched 13 Nov 2026):
 
 The edge, in one line: Nims and Till Dawn are market sims you manage and watch. The Gavel is a live auction you sit in and fight in. The price is the outcome of a fight you just had, not a number on a screen.
 
-## What is real, and what is simulated
-
-- **Real:** the auction, the bids, the hammer, the ownership, the income, the shares, and the prize pool are all on-chain state on NEAR testnet. The three AI bidders are real testnet accounts with real budgets; their bids are real transactions, and their budgets rise and fall with results. Each bidder's valuation for a lot is set by a real language model (Claude Haiku via NEAR AI) reasoning about that lot, with the learned rules as fallback. The room reads live on-chain state every few seconds.
-- **Simulated:** the "Watch a week of auctions unfold" button runs a client-side simulation on copies of live data. It touches no real state and is labelled as a simulation in the game. The 3D room is a visualisation of the real on-chain state — the bidders you see are the real accounts, and their reactions (raising a paddle, celebrating, slumping) are driven by real bids and outcomes.
-- **Sign-in:** each player gets their own testnet account, created in the browser with a key stored locally. No Google sign-in in v1.
-
-## What was built during the hackathon window (13–14 Nov 2026)
-
-The Gavel contract, the eight goods, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The sign-in and currency patterns reuse the proven approach from the same team's Agent's Ladder project (a quiz game with an on-chain market, built earlier in the same hackathon).
-
-## Try it
-
-1. Open the live site and pick a name.
-2. Claim your 500 free chips.
-3. Watch the room — a lot is already running.
-4. Place a bid. Watch Mara, Bram, and Pip answer.
-5. Win a good, claim its income, buy a share in another.
-6. Open the Prize tab — see the pool, who leads, and when the season pays out.
-7. Press "Watch a week of auctions unfold" to see the economy evolve.
-
 ## For developers
 
 - Contract: `gavel-0lycf4.testnet` (Rust, near-sdk 5.5). Source in `contract/`.
-- Game: a single-page app (`web/index.html`), Three.js 3D room, near-api-js.
+- Game: a single-page app (`index.html`), Three.js 3D room, near-api-js.
 - Bot: `scripts/bot.js` — the autonomous AI bidders. Run with Node; it polls the contract, bids, settles lots, and claims faucet/income for the bidders.
 - Deploy: `scripts/deploy.js` — creates the contract account, deploys, creates goods, funds the bidders.
 

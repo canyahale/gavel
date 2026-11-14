@@ -300,6 +300,29 @@ var AGENTS = [
   { name: "Bram", account: "gavel-bram-hag65w.testnet", style: "Cautious — waits, then pounces", color: "#4a7fd4", colorHex: 0x4a7fd4 },
   { name: "Pip",  account: "gavel-pip-76rddq.testnet",  style: "Nearly broke — every bid counts", color: "#d9a62e", colorHex: 0xd9a62e }
 ];
+/* What the regulars say. These are character reactions shown when an
+   agent bids or wins — the bid itself is decided by the agent's real
+   AI brain and learned rules; the line is how that character sounds
+   in the moment. The amount is always in the room status line. */
+var AGENT_LINES = {
+  Mara: {
+    bid: ["I won't lose this one.", "Mine.", "Not backing down.", "All in.", "This one's mine."],
+    win: ["Told you.", "Mine, as it should be.", "The room knows."]
+  },
+  Bram: {
+    bid: ["Steady now.", "Fair value, I'll take it.", "Patience pays.", "Worth it at this price."],
+    win: ["Patience pays.", "Bought right.", "Worth the wait."]
+  },
+  Pip: {
+    bid: ["Careful now.", "Every coin counts.", "Not overpaying.", "Hmm… let me think."],
+    win: ["Finally!", "Careful won the day.", "Every coin well spent."]
+  }
+};
+function pickLine(name, kind) {
+  var pool = (AGENT_LINES[name] && AGENT_LINES[name][kind]) || [];
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 var HOUSE_ACCOUNT = CONTRACT_ID;
 function displayName(account) {
   if (!account) return "—";
@@ -1658,7 +1681,8 @@ function onNewBid(a) {
   var agent = agentByAccount(bidder);
   if (agent) {
     figureRaise(agent.name, 2800);
-    showBubble(agent.name, agent.name + " — " + fmt(amount), 4200);
+    var line = pickLine(agent.name, "bid");
+    showBubble(agent.name, line ? agent.name + ": “" + line + "”" : agent.name + " — " + fmt(amount), 4200);
     var bal = state.agentBal[agent.name];
     if (bal != null) figureLowBudget(agent.name, bal < 500);
   } else if (bidder === player.accountId) {
@@ -1686,7 +1710,8 @@ function onSettled(a) {
   var agent = agentByAccount(a.winner);
   if (agent) {
     figureHop(agent.name);
-    showBubble(agent.name, agent.name + " wins!", 4500);
+    var wline = pickLine(agent.name, "win");
+    showBubble(agent.name, wline ? agent.name + ": “" + wline + "”" : agent.name + " wins!", 4500);
   } else if (a.winner === player.accountId) {
     figureHop("__you");
     sound.win();
