@@ -9,14 +9,14 @@
 ## Try it in 60 seconds
 
 1. Open the live site and pick a name — your seat is ready in seconds.
-2. Tap **Claim 500 free chips**. One tap, 500 chips, no sign-in.
+2. Tap **Claim 1500 free chips**. One tap, 1500 chips, no sign-in.
 3. A lot is already on the podium. Tap **Bid** and watch Mara, Bram, and Pip answer.
 4. Win a good and it earns you income every day. Open the **Prize** tab to see the pool and who leads.
 5. Press **Watch a week of auctions unfold** to see the economy evolve in a minute.
 
 ## The loop
 
-**30 seconds:** Arrive, pick a name, claim 500 free chips. A lot is already on the podium — a good, its income, the current bid, the time left. Place a bid. Watch the room react.
+**30 seconds:** Arrive, pick a name, claim 1500 free chips. A lot is already on the podium — a good, its income, the current bid, the time left. Place a bid. Watch the room react.
 
 **5 minutes:** Win a lot and the good is yours. It earns income every day. Watch the AI bidders fight over the next lot — they bid against each other even when you do nothing. When the hammer falls, ownership changes on the spot.
 
@@ -34,7 +34,7 @@
 - **The bidders learn.** Mara, Bram and Pip do not follow fixed rules. Each one carries a valuation multiple that moves with results: lose a lot you bid on and you bid harder next time; win but overpay and you pull back; win at a good price and you get bolder. They also get wary — if the same rival outbids you three times, you stop fighting them head-on and look for another lot. And they look after their own money: a bidder with little left bids carefully, a rich one bids freely, and a broke one sits out and rebuilds from the faucet and their income instead of needing a hand-out. The learning is saved between restarts, so what they learned yesterday still shapes how they bid today.
 - **The bidders think.** On top of the learning, each bidder has a real AI brain: once per lot, each one asks a language model (Claude Haiku, via NEAR AI) what the good is worth to them, given the lot, their balance, their goods, their recent results and who is leading. The model's answer sets the most they will pay for that lot. It reasons in character — Mara pushes hard and hates losing, Bram waits for value, Pip spends carefully and remembers her losses. The rules engine stays as the fallback, so if the model is down the room keeps bidding on the learned rules and never goes quiet.
 - **Prices find their own level.** A lot nobody bids on was priced too high. Its next starting price drops 15% (never below three days of the good's income), and keeps dropping until someone buys it. When it sells, the sale price sets the next starting bid again. No dev reprices anything — the room discovers what a good is worth by itself.
-- **Chips.** Gavel Coins are the room's currency. Claim 500 free chips once a day. There is no real money, no house edge, and no cash-out. Chips are an internal game currency only.
+- **Chips.** Gavel Coins are the room's currency. Claim 1500 free chips once a day. There is no real money, no house edge, and no cash-out. Chips are an internal game currency only.
 - **Sound.** The room has its own original sound set, synthesised in the game (Web Audio) — the gavel strike, the bid landing, the win and loss, the room murmur, and the auctioneer's call. No stock sounds. There is a sound on/off toggle that persists; audio starts only after you tap, and nothing plays when it is off.
 
 
