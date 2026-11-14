@@ -1,9 +1,10 @@
 // Top up the three AI bidders so the room stays lively.
 // Uses the owner-only seed_bankroll (it mints coins). Run once.
-const { connect, keyStores, KeyPair } = require('/home/hatch/workspace/merit/node_modules/near-api-js');
+const { connect, keyStores, KeyPair } = require('near-api-js');
 const fs = require('fs');
+const path = require('path');
 const CONTRACT_ID = 'gavel-0lycf4.testnet';
-const ACCOUNTS = JSON.parse(fs.readFileSync('/home/hatch/workspace/gavel/.testnet-accounts.json', 'utf8'));
+const ACCOUNTS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.testnet-accounts.json'), 'utf8'));
 
 async function main() {
   const ownerKey = ACCOUNTS[CONTRACT_ID] || ACCOUNTS['gavel-0lycf4.testnet'];
@@ -12,7 +13,7 @@ async function main() {
   await keyStore.setKey('testnet', CONTRACT_ID, KeyPair.fromString(ownerKey.private_key));
   const near = await connect({ networkId: 'testnet', keyStore, nodeUrl: 'https://rpc.testnet.fastnear.com' });
   const account = await near.account(CONTRACT_ID);
-  const contract = new (require('/home/hatch/workspace/merit/node_modules/near-api-js').Contract)(account, CONTRACT_ID, {
+  const contract = new (require('near-api-js').Contract)(account, CONTRACT_ID, {
     viewMethods: ['mt_balance_of', 'mt_total_supply'],
     changeMethods: ['seed_bankroll'],
     useLocalViewExecution: false

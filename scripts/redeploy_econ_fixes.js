@@ -5,11 +5,12 @@
 // Verifies state before/after; small differences are expected only
 // if the live bot settles a lot or pays income during the deploy.
 const fs = require('fs');
-const { connect, keyStores, KeyPair } = require('/home/hatch/workspace/merit/node_modules/near-api-js');
+const path = require('path');
+const { connect, keyStores, KeyPair } = require('near-api-js');
 
 const CONTRACT_ID = 'gavel-0lycf4.testnet';
-const WASM_PATH = '/home/hatch/workspace/gavel/contract/target/near/the_gavel.wasm';
-const KEYS_PATH = '/home/hatch/workspace/gavel/.testnet-accounts.json';
+const WASM_PATH = path.join(__dirname, '..', 'contract', 'target', 'near', 'the_gavel.wasm');
+const KEYS_PATH = path.join(__dirname, '..', '.testnet-accounts.json');
 
 (async () => {
   const keys = JSON.parse(fs.readFileSync(KEYS_PATH, 'utf8'));

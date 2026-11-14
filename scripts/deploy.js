@@ -1,13 +1,13 @@
 // Deploy The Gavel contract to a fresh NEAR testnet account, create the
-// 8 goods, create 3 AI bidder accounts and fund their starting bankrolls.
+// 10 goods, create 3 AI bidder accounts and fund their starting bankrolls.
 // Saves keys to ~/workspace/gavel/.testnet-accounts.json (chmod 600).
 // Keys are never printed.
 const fs = require('fs');
 const path = require('path');
-const { connect, keyStores, KeyPair, utils } = require('/home/hatch/workspace/merit/node_modules/near-api-js');
+const { connect, keyStores, KeyPair, utils } = require('near-api-js');
 
-const WASM_PATH = '/home/hatch/workspace/gavel/contract/target/near/the_gavel.wasm';
-const KEYS_PATH = '/home/hatch/workspace/gavel/.testnet-accounts.json';
+const WASM_PATH = path.join(__dirname, '..', 'contract', 'target', 'near', 'the_gavel.wasm');
+const KEYS_PATH = path.join(__dirname, '..', '.testnet-accounts.json');
 const HELPER_URL = 'https://helper.testnet.near.org/account';
 
 function randomSuffix() {
@@ -34,6 +34,8 @@ const GOODS = [
   { good_id: 'recipe-2', name: "Smith's Recipe", kind: 'recipe', income_per_day: '160' },
   { good_id: 'relic-1', name: 'Sun Relic', kind: 'relic', income_per_day: '200' },
   { good_id: 'relic-2', name: 'Moon Relic', kind: 'relic', income_per_day: '250' },
+  { good_id: 'relic-3', name: 'Crown Relic', kind: 'relic', income_per_day: '300' },
+  { good_id: 'relic-4', name: 'Phoenix Relic', kind: 'relic', income_per_day: '400' },
 ];
 
 // AI bidders: name, personality, starting bankroll (Gavel Coins).
@@ -100,7 +102,7 @@ const BIDDERS = [
     return tx;
   }
 
-  // 4. Create the 8 goods.
+  // 4. Create the 10 goods.
   for (const g of GOODS) {
     const tx = await call('create_good', g);
     console.log('Created good', g.good_id, 'tx', tx.transaction.hash);

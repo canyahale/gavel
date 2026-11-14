@@ -12,12 +12,12 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { connect, keyStores, KeyPair } = require('/home/hatch/workspace/merit/node_modules/near-api-js');
+const { connect, keyStores, KeyPair } = require('near-api-js');
 
 const CONTRACT_ID = 'gavel-0lycf4.testnet';
-const KEYS_PATH = '/home/hatch/workspace/gavel/.testnet-accounts.json';
-const STATE_PATH = '/home/hatch/workspace/gavel/bot-state.json';
-const LOG_PATH = '/home/hatch/workspace/gavel/bot.log';
+const KEYS_PATH = path.join(__dirname, '..', '.testnet-accounts.json');
+const STATE_PATH = path.join(__dirname, '..', 'bot-state.json');
+const LOG_PATH = path.join(__dirname, '..', 'bot.log');
 const RPC_URL = 'https://rpc.testnet.fastnear.com';
 const GAS = BigInt('30000000000000');
 const TICK_MS = 4000;
@@ -28,7 +28,7 @@ const AUCTION_DURATION_S = 180;
 // with GAVEL_AI_MODEL for testing; the default is Claude Haiku, because
 // glm-5.3-flash returns empty content via this connector (verified
 // 2026-11-13). Each call costs roughly $0.0004.
-const AI_HELPER = '/home/hatch/workspace/custom-connectors/custom.near-ai/bin/near-ai-call.py';
+const AI_HELPER = process.env.GAVEL_AI_HELPER || path.join(__dirname, '..', '..', 'custom-connectors', 'custom.near-ai', 'bin', 'near-ai-call.py');
 const AI_MODEL = process.env.GAVEL_AI_MODEL || 'anthropic/claude-haiku-4-5';
 const AI_TIMEOUT_MS = 15000;
 const AI_MAX_TOKENS = 300;
