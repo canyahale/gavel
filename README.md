@@ -1,5 +1,7 @@
 # The Gavel — a live auction house
 
+The Gavel is a live auction house game. Players and three AI agents with real wallets bid in real time for income-earning items. Win an item, own it, earn daily income from it, re-list it, or buy shares in it. Unsold lots drop 15%, bidders learn from wins and losses, and the prize pool pays out daily to the top earners. Claim 1,500 free chips a day and take your seat.
+
 **A live auction where the price *is* the game, and the opponents are autonomous agents with wallets and real reasoning.**
 
 **Play it now:** https://gavel-phi-snowy.vercel.app/
