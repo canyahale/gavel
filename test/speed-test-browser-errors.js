@@ -49,17 +49,23 @@ const nearJs = fs.readFileSync('/home/hatch/workspace/gavel/test/near-api-js.min
   }, undefined, { timeout: 90000, polling: 100 });
   const secondClaimMsg = await page.evaluate(() => (document.querySelector('.bid-msg') || {}).textContent);
   console.log(JSON.stringify({ secondClaimMs: Date.now() - t2, secondClaimMsg }));
-  // Queue alive after the failure: bid on the open lot.
+  // Queue alive after the failure: bid on an affordable open lot.
+  // Wait for one whose next bid is <= 1100 (of the 1500 chips) with
+  // plenty of time left, and bid well above the minimum so an agent
+  // bid landing during confirmation does not make this bid too low.
   await page.waitForFunction(() => {
     const l = window.currentLotCache;
-    return l && (Math.floor(Number(l.ends_at) / 1000000) - Date.now() > 60000) && !document.querySelector('#btn-bid').disabled;
-  }, undefined, { timeout: 120000, polling: 500 });
+    if (!l) return false;
+    const next = l.bids_count === 0 ? Number(l.starting_bid) : Number(l.current_bid) + 25;
+    return (Math.floor(Number(l.ends_at) / 1000000) - Date.now() > 60000) && next <= 1100 && !document.querySelector('#btn-bid').disabled;
+  }, undefined, { timeout: 300000, polling: 1000 });
   const lot = await page.evaluate(() => {
     const l = window.currentLotCache;
     return { auction_id: l.auction_id, current_bid: l.current_bid, bids_count: l.bids_count, starting_bid: l.starting_bid };
   });
-  const amount = lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid) + 25;
-  await page.evaluate(() => document.querySelector('#btn-bid').click());
+  const nextBid = lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid) + 25;
+  const amount = nextBid + 300;
+  await page.evaluate((amt) => { document.querySelector('#inp-bid').value = String(amt); document.querySelector('#btn-bid').click(); }, amount);
   await page.waitForFunction(() => {
     const m = document.querySelector('.bid-msg');
     return m && m.textContent.indexOf('is in — you are the highest bidder') >= 0;

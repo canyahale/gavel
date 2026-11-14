@@ -6,8 +6,8 @@
    - timed claim + bid with sign/broadcast/receipt split, tx hashes,
      on-chain state verified after each move
    - sequential read fallback: dead fastnear falls through to next endpoint
-   - error paths: stalled sign fails fast (10s timeout, all endpoints),
-     unknown-hash receipt rejects at the 15s deadline (dropped tx = failure),
+   - error paths: stalled sign fails fast (20s timeout, all endpoints),
+     unknown-hash receipt rejects at the 60s deadline (dropped tx = failure),
      queue not poisoned after failures (later claim rejects via receipt)
    Usage: node test/speed-test-node.js */
 const fs = require("fs");
@@ -87,14 +87,16 @@ const name = "speedtest" + Math.floor(Math.random() * 900000 + 100000);
   const canClaim = await global.rpcCall("can_claim_faucet", { account_id: accountId });
   log("ON-CHAIN after claim: balance", balAfterClaim, "can_claim", canClaim);
 
-  // --- 3. Bid on the current lot ---
+  // --- 3. Bid on an affordable current lot (<= 1400 of the 1500 chips) ---
   const open = await global.rpcCall("get_open_auctions", {});
   log("OPEN auctions:", (open || []).length);
   let bidHash = null, bidMs = null;
-  if (open && open.length) {
-    open.sort((a, b) => a.ends_at - b.ends_at);
-    const lot = open[0];
-    const amount = lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid) + 25;
+  const affordable = (open || [])
+    .map((a) => ({ lot: a, amount: a.bids_count === 0 ? Number(a.starting_bid) : Number(a.current_bid) + 25 }))
+    .filter((x) => x.amount <= 1400)
+    .sort((a, b) => a.lot.ends_at - b.lot.ends_at)[0];
+  if (affordable) {
+    const lot = affordable.lot, amount = affordable.amount;
     const bidStart = Date.now();
     const s0 = timings.signs.length, b0 = timings.broadcasts.length, r0 = timings.receipts.length, q0 = timings.viewAccessKeyQueries;
     bidHash = await global.signedCall("place_bid", { auction_id: lot.auction_id, amount: String(amount) });
@@ -110,7 +112,7 @@ const name = "speedtest" + Math.floor(Math.random() * 900000 + 100000);
     const balAfterBid = await global.rpcCall("mt_balance_of", { account_id: accountId, token_id: "gavel" });
     log("ON-CHAIN after bid: balance", balAfterBid);
   } else {
-    log("BID SKIPPED: no open lot");
+    log("BID SKIPPED: no affordable open lot (all next bids > 1400)");
   }
 
   // --- 4. Sequential fallback: kill fastnear, reads must still work ---
@@ -121,10 +123,10 @@ const name = "speedtest" + Math.floor(Math.random() * 900000 + 100000);
   log("FALLBACK with fastnear dead: get_goods returned", Array.isArray(goods) ? goods.length + " goods" : goods, "in", (Date.now() - fbStart) + "ms");
   global.RPC_URLS[0] = savedUrls[0];
 
-  // --- 5a. Stalled sign must fail fast (10s timeout per endpoint).
+  // --- 5a. Stalled sign must fail fast (20s timeout per endpoint).
   // Stub BOTH the prototype (fallback reconnects build fresh Account
   // objects from it) and the current instance (an earlier timing
-  // wrapper captured the original method). Expect ~30s: 10s x 3 endpoints.
+  // wrapper captured the original method). Expect ~60s: 20s x 3 endpoints.
   const stallStart = Date.now();
   const realProtoSign = nearApi.Account.prototype.signTransaction;
   const hang = function () { return new Promise(() => {}); };
