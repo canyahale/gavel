@@ -240,9 +240,12 @@ function ensureSeat() {
    provider.sendTransactionAsync, which returns as soon as the
    network accepts it (wait_until NONE). The receipt is then checked
    directly: poll txStatus with wait_until NONE every ~500ms (up to
-   ~10s) and resolve with the transaction hash (hex) only once the
+   ~15s) and resolve with the transaction hash (hex) only once the
    receipt shows success. A broadcast that never lands — a dropped
-   transaction — now rejects instead of reporting success.
+   transaction — now rejects instead of reporting success. Every
+   provider call inside the submit is raced against a short timeout
+   (10s to sign, 10s to broadcast, 5s per receipt poll), so a stalled
+   endpoint can never leave a move pending forever.
    One transaction at a time per seat: every submit is chained onto
    a single promise queue, so two moves fired at once (a claim and
    a settle, a bid and a settle) can never sign against the same
@@ -253,6 +256,30 @@ function ensureSeat() {
    alone is not enough: once a receipt confirms success the cached
    nonce is bumped to the nonce just used, and after any failure the
    cached key is dropped so the next sign re-reads it from the chain. */
+/* Race a promise against a clock. near-api-js 5.1.1 exposes no timeout
+   on its provider calls, and its own fetch has none either: a stalled
+   endpoint (or the bundle's ~113s internal retry loop on a failing
+   fetch) can leave a call pending forever, which used to leave the
+   claim button on "Claiming…" forever. The timeout only rejects the
+   raced promise — the underlying call, if it ever settles, is ignored.
+   These timeouts are deliberately far shorter than that ~113s stall. */
+function withTimeout(promise, ms, label) {
+  return new Promise(function (resolve, reject) {
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      reject(new Error(label + " timed out after " + ms + "ms"));
+    }, ms);
+    promise.then(function (v) {
+      if (done) return;
+      done = true; clearTimeout(timer); resolve(v);
+    }, function (err) {
+      if (done) return;
+      done = true; clearTimeout(timer); reject(err);
+    });
+  });
+}
 var signQueue = Promise.resolve();
 function signedCall(method, args) {
   var run = function () {
@@ -280,16 +307,29 @@ function txHashHex(hash) {
 }
 function submitSignedCall(method, args, rpcIndex) {
   var api = getNearApi();
-  return seatAccount.signTransaction(CONTRACT_ID, [
+  /* Sign, raced against a 10s timeout: a stalled provider fetch inside
+     signTransaction never settles on its own, and the bundle retries a
+     failing fetch for ~113s before rejecting. A timeout here means
+     nothing was broadcast yet, so the rejection falls through to the
+     RPC fallback on the next endpoint below — exactly like any other
+     sign failure. */
+  return withTimeout(seatAccount.signTransaction(CONTRACT_ID, [
     api.transactions.functionCall(method, args, SEAT_GAS, BigInt(0))
-  ]).then(function (signed) {
+  ]), 10000, "Signing").then(function (signed) {
     var signedTx = signed[1];
     var hashBytes = signed[0];
     /* Broadcast only — returns as soon as the network accepts the
        transaction. No wait for execution, no status probe before
-       submitting. */
-    return seatAccount.connection.provider.sendTransactionAsync(signedTx).then(function () {
+       submitting. Raced against a 10s timeout: a timeout here is
+       ambiguous (the transaction may already have been accepted), so
+       it is NOT retried with a fresh transaction — instead the receipt
+       poll below decides whether this hash landed. Any other broadcast
+       rejection is thrown, and a fresh transaction is never signed. */
+    return withTimeout(seatAccount.connection.provider.sendTransactionAsync(signedTx), 10000, "Broadcast").then(function () {
       return waitForReceipt(hashBytes);
+    }, function (broadcastErr) {
+      if (broadcastErr && /timed out/.test(String(broadcastErr.message || ""))) return waitForReceipt(hashBytes);
+      throw broadcastErr;
     }).then(function () {
       /* The receipt confirms the transaction executed: the nonce it
          used is now spent on-chain, so move the cached access key
@@ -339,28 +379,50 @@ function dropCachedAccessKey(signedTx) {
 }
 /* Poll the transaction receipt until it executes or the timeout
    expires. Each check is one quick txStatus query with wait_until
-   NONE — it never waits itself. A transaction the network dropped
-   never shows up, so the poll ends in a rejection instead of a
-   false success. Resolves once the receipt shows success; rejects
-   with the contract's failure reason when the receipt shows
-   failure, or when ~10s pass without the transaction landing. */
+   NONE — it never waits itself — raced against a 5s timeout, so a
+   stalled poll is treated like "not found yet" and polling simply
+   continues. A standalone timer rejects at the 15s deadline even if
+   a poll is still in flight, so the wait can never hang past the
+   deadline; resolve/reject happen at most once. A transaction the
+   network dropped never shows up, so the poll ends in a rejection
+   instead of a false success. Resolves once the receipt shows
+   success; rejects with the contract's failure reason when the
+   receipt shows failure, or when 15s pass without the transaction
+   landing. */
 function waitForReceipt(hashBytes) {
   var provider = seatAccount.connection.provider;
   var accountId = player.accountId;
-  var deadline = Date.now() + 10000;
+  var deadlineMs = 15000;
+  var deadline = Date.now() + deadlineMs;
   return new Promise(function (resolve, reject) {
+    var settled = false;
+    var deadlineTimer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      reject(new Error("The move was sent but did not land in time — try again."));
+    }, deadlineMs);
+    function done(fn, arg) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadlineTimer);
+      fn(arg);
+    }
     (function check() {
-      provider.txStatus(hashBytes, accountId, "NONE").then(function (outcome) {
+      if (settled) return;
+      withTimeout(provider.txStatus(hashBytes, accountId, "NONE"), 5000, "Receipt check").then(function (outcome) {
+        if (settled) return;
         var status = outcome && outcome.status;
-        if (status && status.SuccessValue !== undefined) { resolve(); return; }
-        if (status && status.Failure) { reject(new Error("That move did not go through: " + receiptFailureText(status.Failure))); return; }
+        if (status && status.SuccessValue !== undefined) { done(resolve); return; }
+        if (status && status.Failure) { done(reject, new Error("That move did not go through: " + receiptFailureText(status.Failure))); return; }
         /* No receipt yet — keep waiting until the timeout. */
-        if (Date.now() >= deadline) { reject(new Error("The move was sent but did not land in time — try again.")); return; }
+        if (Date.now() >= deadline) { done(reject, new Error("The move was sent but did not land in time — try again.")); return; }
         setTimeout(check, 500);
       }, function () {
-        /* Not found yet (or a wobbly endpoint) — keep polling until
-           the timeout; a dropped transaction simply never appears. */
-        if (Date.now() >= deadline) { reject(new Error("The move was sent but did not land in time — try again.")); return; }
+        /* Not found yet, a wobbly endpoint, or a timed-out poll —
+           keep polling until the timeout; a dropped transaction
+           simply never appears. */
+        if (settled) return;
+        if (Date.now() >= deadline) { done(reject, new Error("The move was sent but did not land in time — try again.")); return; }
         setTimeout(check, 500);
       });
     })();
