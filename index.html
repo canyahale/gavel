@@ -481,7 +481,7 @@ function rpcCallVia(rpcUrl, methodName, argsObj) {
   return fetchWithTimeout(rpcUrl, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: "gavel-read", method: "query", params: { request_type: "call_function", account_id: CONTRACT_ID, method_name: methodName, args_base64: b64, finality: "optimistic" } })
-  }, 8000).then(function (resp) { return resp.json(); }).then(function (json) {
+  }, 20000).then(function (resp) { return resp.json(); }).then(function (json) {
     if (json && json.result && json.result.result) {
       var bytes = json.result.result, text = "";
       for (var i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
@@ -503,7 +503,7 @@ function viewAccountVia(rpcUrl, accountId) {
   return fetchWithTimeout(rpcUrl, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: "gavel-view", method: "query", params: { request_type: "view_account", finality: "optimistic", account_id: accountId } })
-  }, 8000).then(function (resp) { return resp.json(); }).then(function (json) {
+  }, 20000).then(function (resp) { return resp.json(); }).then(function (json) {
     if (json && json.result) return json.result;
     var msg = json && json.error ? String(json.error.name || "") + " " + String(json.error.message || "") : "";
     if (/not exist|UNKNOWN_ACCOUNT|unknown account/i.test(msg)) return null;
@@ -2000,27 +2000,43 @@ function takeSeat() {
   player.name = name;
   storeSet("gavelName", name);
   ensureFace("You", name);
-  var msg = el("seat-msg");
-  msg.textContent = "Setting up your seat… this takes a few seconds.";
-  el("btn-seat").disabled = true;
-  var tries = 0;
+  /* The seat is instant — you are seated the moment you tap. The chips
+     set themselves up in the background and keep trying until they are
+     ready, so there is no way for taking a seat to fail. */
+  showSeated();
+  setBidMsg("You are seated, " + name + ". Your chips are being set up…", "");
+  poll();
+  setupChipsInBackground();
+}
+/* Set up the chips in the background, retrying until they are ready.
+   The seat itself never fails; this only gates claiming and bidding,
+   and it never gives up on the player. */
+var chipsSetupRunning = false;
+function setupChipsInBackground() {
+  if (chipsSetupRunning || player.ready) return;
+  chipsSetupRunning = true;
+  var delay = 2000;
   (function attempt() {
-    tries++;
+    if (player.ready) { chipsSetupRunning = false; return; }
     ensureSeat().then(function () {
-      showSeated();
-      msg.textContent = "";
-      setBidMsg("You are seated, " + name + ". Claim your free chips, then raise your paddle.", "ok");
+      chipsSetupRunning = false;
+      setBidMsg("Your chips are ready — claim your free chips, then raise your paddle.", "ok");
       poll();
-    }, function (err) {
-      if (tries < 2) {
-        msg.textContent = "Setting up your seat… (try " + (tries + 1) + " of 2)";
-        setTimeout(attempt, 2000);
-        return;
-      }
-      msg.textContent = (err && err.message) || "Your seat could not be set up — the room could not make your account. Check your connection and tap again.";
-      el("btn-seat").disabled = false;
+    }, function () {
+      setTimeout(attempt, delay);
+      delay = Math.min(delay * 2, 15000);
     });
   })();
+}
+/* Wait until the chips are ready (player.ready). Resolves as soon as the
+   background setup finishes; never rejects. */
+function whenChipsReady() {
+  return new Promise(function (resolve) {
+    (function check() {
+      if (player.ready) return resolve();
+      setTimeout(check, 500);
+    })();
+  });
 }
 /* Start fresh: wipe the stored seat (name, account and key) and reload,
    so a stuck seat gets a brand new account instead of retrying a broken one. */
@@ -2065,7 +2081,7 @@ function boot() {
   if (player.name && savedAccount) {
     player.accountId = savedAccount;
     showSeated();
-    ensureSeat().then(function () { poll(); }, function () {});
+    setupChipsInBackground();
   }
   /* bidding — one tap, like raising a hand */
   el("btn-bid").addEventListener("click", function () {
@@ -2097,33 +2113,45 @@ function boot() {
       renderHud(lot);
     }
   });
-  /* chips — retry up to 3 times, so a slow connection does not leave
-     a new player stuck with no chips. */
+  /* chips — wait for the seat's chips to be ready, then claim. The claim
+     retries itself, so a slow connection never leaves a player with no
+     chips. The only final answer is "already claimed today". */
   el("btn-chips").addEventListener("click", function () {
     if (!player.accountId) { setBidMsg("Take your seat first — pick a display name above and you can claim chips in seconds.", "bad"); el("seat-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     var btn = el("btn-chips");
     btn.disabled = true;
-    btn.textContent = "Claiming…";
-    var tries = 0;
-    (function attempt() {
-      tries++;
-      signedCall("claim_faucet", {}).then(function () {
-        setBidMsg("500 free chips are yours. Raise your paddle!", "ok");
-        sound.win();
-        setTimeout(poll, 1200);
-        poll();
-      }, function () {
-        if (tries < 3) {
-          btn.textContent = "Claiming… (try " + (tries + 1) + " of 3)";
-          setTimeout(attempt, 2000);
-          return;
-        }
-        setBidMsg("Those chips could not be claimed. If your seat is new, wait a few seconds and tap again — if it keeps failing, take your seat again above.", "bad");
-        btn.disabled = false;
-        btn.textContent = "Claim 500 free chips";
-        poll();
-      });
-    })();
+    btn.textContent = "Getting your chips ready…";
+    whenChipsReady().then(function () {
+      btn.textContent = "Claiming…";
+      var tries = 0;
+      (function attempt() {
+        tries++;
+        signedCall("claim_faucet", {}).then(function () {
+          setBidMsg("500 free chips are yours. Raise your paddle!", "ok");
+          sound.win();
+          setTimeout(poll, 1200);
+          poll();
+        }, function (err) {
+          var msg = String((err && err.message) || "");
+          if (/already claimed/i.test(msg)) {
+            setBidMsg("You already claimed your free chips today — come back tomorrow for 500 more.", "");
+            btn.disabled = false;
+            btn.textContent = "Claim 500 free chips";
+            poll();
+            return;
+          }
+          if (tries < 8) {
+            btn.textContent = "Claiming… (try " + (tries + 1) + ")";
+            setTimeout(attempt, 2000);
+            return;
+          }
+          setBidMsg("Still setting up your chips — give it a moment and tap Claim again.", "");
+          btn.disabled = false;
+          btn.textContent = "Claim 500 free chips";
+          poll();
+        });
+      })();
+    });
   });
   /* market + mine actions (event delegation — panels re-render every poll) */
   document.addEventListener("click", function (e) {
