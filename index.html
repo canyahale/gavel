@@ -589,8 +589,22 @@ function ensureSeat() {
     if (!info) throw new Error("Your seat could not be set up. Check your connection and try again.");
     var keyStore = new nearApi.keyStores.InMemoryKeyStore();
     await keyStore.setKey("testnet", accountId, kp);
-    var near = await nearApi.connect({ networkId: "testnet", keyStore: keyStore, nodeUrl: RPC_URLS[0] });
-    var account = await near.account(accountId);
+    /* Connect for writes: try every RPC in turn — the first one that
+       answers wins. Reads already fall back across all three, but the
+       write connection used only the first URL, so a phone that could
+       not reach it could read the room yet never claim, bid, or sign.
+       That was the claim bug: the seat looked fine and the room loaded,
+       but every signed move failed. */
+    var near = null, account = null, lastErr = null;
+    for (var ri = 0; ri < RPC_URLS.length; ri++) {
+      try {
+        var cand = await nearApi.connect({ networkId: "testnet", keyStore: keyStore, nodeUrl: RPC_URLS[ri] });
+        var candAcc = await cand.account(accountId);
+        await candAcc.state();
+        near = cand; account = candAcc; break;
+      } catch (e) { lastErr = e; }
+    }
+    if (!near) throw lastErr || new Error("Could not reach the room to set up your seat.");
     var contract = new nearApi.Contract(account, CONTRACT_ID, {
       viewMethods: ["get_goods", "get_open_auctions", "get_auctions", "get_auction", "get_good", "mt_balance_of", "mt_total_supply", "get_prize_pool", "get_season_info", "get_leaderboard", "get_last_payout", "can_claim_faucet", "get_income_accrued", "get_shares", "get_all_shares"],
       changeMethods: ["claim_faucet", "place_bid", "open_auction", "settle_auction", "claim_income", "buy_share", "sell_share", "list_good", "buy_good", "delist_good"],
@@ -2045,22 +2059,33 @@ function boot() {
       renderHud(lot);
     }
   });
-  /* chips */
+  /* chips — retry up to 3 times, so a slow connection does not leave
+     a new player stuck with no chips. */
   el("btn-chips").addEventListener("click", function () {
     if (!player.accountId) { setBidMsg("Take your seat first — pick a display name above and you can claim chips in seconds.", "bad"); el("seat-card").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     var btn = el("btn-chips");
     btn.disabled = true;
     btn.textContent = "Claiming…";
-    signedCall("claim_faucet", {}).then(function () {
-      setBidMsg("500 free chips are yours. Raise your paddle!", "ok");
-      sound.win();
-      setTimeout(poll, 1200);
-      poll();
-    }, function () {
-      setBidMsg("Those chips could not be claimed. If your seat is new, wait a few seconds and tap again — if it keeps failing, take your seat again above.", "bad");
-      btn.disabled = false;
-      poll();
-    });
+    var tries = 0;
+    (function attempt() {
+      tries++;
+      signedCall("claim_faucet", {}).then(function () {
+        setBidMsg("500 free chips are yours. Raise your paddle!", "ok");
+        sound.win();
+        setTimeout(poll, 1200);
+        poll();
+      }, function () {
+        if (tries < 3) {
+          btn.textContent = "Claiming… (try " + (tries + 1) + " of 3)";
+          setTimeout(attempt, 2000);
+          return;
+        }
+        setBidMsg("Those chips could not be claimed. If your seat is new, wait a few seconds and tap again — if it keeps failing, take your seat again above.", "bad");
+        btn.disabled = false;
+        btn.textContent = "Claim 500 free chips";
+        poll();
+      });
+    })();
   });
   /* market + mine actions (event delegation — panels re-render every poll) */
   document.addEventListener("click", function (e) {
