@@ -270,13 +270,18 @@ function ensureSeat() {
    the player's own key and broadcast with
    provider.sendTransactionAsync, which returns as soon as the
    network accepts it (wait_until NONE). The receipt is then checked
-   directly: poll txStatus with wait_until NONE every ~250ms (up to
-   ~15s) and resolve with the transaction hash (hex) only once the
-   receipt shows success. A broadcast that never lands — a dropped
-   transaction — now rejects instead of reporting success. Every
-   provider call inside the submit is raced against a short timeout
-   (10s to sign, 10s to broadcast, 5s per receipt poll), so a stalled
-   endpoint can never leave a move pending forever.
+   by asking the RPC to wait server-side until the transaction
+   executes (txStatus with wait_until EXECUTED_OPTIMISTIC, one call
+   at a time, up to ~60s) and resolve with the transaction hash
+   (hex) only once the receipt shows success. A broadcast that never
+   lands — a dropped transaction — now rejects instead of reporting
+   success. Every provider call inside the submit is raced against
+   a timeout (20s to sign, 20s to broadcast, 30s per receipt check),
+   so a stalled endpoint can never leave a move pending forever.
+   The timeouts are deliberately generous for a slow connection: a
+   sign pays two sequential fetches and a receipt check can take
+   seconds each, and a timeout shorter than that would discard a
+   move that was actually working.
    One transaction at a time per seat: every submit is chained onto
    a single promise queue, so two moves fired at once (a claim and
    a settle, a bid and a settle) can never sign against the same
@@ -346,25 +351,28 @@ function txHashHex(hash) {
 }
 function submitSignedCall(method, args, rpcIndex, onBroadcast) {
   var api = getNearApi();
-  /* Sign, raced against a 10s timeout: a stalled provider fetch inside
+  /* Sign, raced against a 20s timeout: a stalled provider fetch inside
      signTransaction never settles on its own, and the bundle retries a
-     failing fetch for ~113s before rejecting. A timeout here means
-     nothing was broadcast yet, so the rejection falls through to the
-     RPC fallback on the next endpoint below — exactly like any other
-     sign failure. */
+     failing fetch for ~113s before rejecting. 20s, not 10s: on a slow
+     connection the sign pays two sequential fetches (the access key,
+     then the block), each of which can take seconds, and a timeout
+     here means nothing was broadcast yet, so the rejection falls
+     through to the RPC fallback on the next endpoint below — exactly
+     like any other sign failure. */
   return withTimeout(seatAccount.signTransaction(CONTRACT_ID, [
     api.transactions.functionCall(method, args, SEAT_GAS, BigInt(0))
-  ]), 10000, "Signing").then(function (signed) {
+  ]), 20000, "Signing").then(function (signed) {
     var signedTx = signed[1];
     var hashBytes = signed[0];
     /* Broadcast only — returns as soon as the network accepts the
        transaction. No wait for execution, no status probe before
-       submitting. Raced against a 10s timeout: a timeout here is
+       submitting. Raced against a 20s timeout: on a slow connection
+       the broadcast itself can take seconds, and a timeout here is
        ambiguous (the transaction may already have been accepted), so
        it is NOT retried with a fresh transaction — instead the receipt
-       poll below decides whether this hash landed. Any other broadcast
+       wait below decides whether this hash landed. Any other broadcast
        rejection is thrown, and a fresh transaction is never signed. */
-    return withTimeout(seatAccount.connection.provider.sendTransactionAsync(signedTx), 10000, "Broadcast").then(function () {
+    return withTimeout(seatAccount.connection.provider.sendTransactionAsync(signedTx), 20000, "Broadcast").then(function () {
       /* The transaction is SENT — accepted by the network — but not
          confirmed. onBroadcast reports exactly that, and nothing
          more: no success message, no balance change, until the
@@ -423,22 +431,26 @@ function dropCachedAccessKey(signedTx) {
   if (!entry) return;
   try { delete entry.cache[entry.key]; } catch (e) {}
 }
-/* Poll the transaction receipt until it executes or the timeout
-   expires. Each check is one quick txStatus query with wait_until
-   NONE — it never waits itself — raced against a 5s timeout, so a
-   stalled poll is treated like "not found yet" and polling simply
-   continues. A standalone timer rejects at the 15s deadline even if
-   a poll is still in flight, so the wait can never hang past the
-   deadline; resolve/reject happen at most once. A transaction the
-   network dropped never shows up, so the poll ends in a rejection
-   instead of a false success. Resolves once the receipt shows
-   success; rejects with the contract's failure reason when the
-   receipt shows failure, or when 15s pass without the transaction
-   landing. */
+/* Confirm a broadcast transaction by asking the RPC itself to wait
+   until the transaction executes. One call, server-side wait: the
+   RPC holds the request until the transaction is executed
+   (optimistically) and returns the outcome, instead of this page
+   polling txStatus every 250ms with wait_until NONE and hoping each
+   poll's answer arrives before its own short timeout. On a slow
+   connection each request can take seconds, so a poll discarded at
+   5s never sees the receipt even though the transaction landed, and
+   the pile of discarded-but-still-running polls holds the browser's
+   connection slots and starves the room's own reads. Here the calls
+   are strictly sequential — one at a time, each raced at 30s — and
+   the whole wait is bounded at 60s, after which a dropped
+   transaction is reported as a failure, never as a success.
+   Resolves once the receipt shows success; rejects with the
+   contract's failure reason when the receipt shows failure, or when
+   60s pass without the transaction landing. */
 function waitForReceipt(hashBytes) {
   var provider = seatAccount.connection.provider;
   var accountId = player.accountId;
-  var deadlineMs = 15000;
+  var deadlineMs = 60000;
   var deadline = Date.now() + deadlineMs;
   return new Promise(function (resolve, reject) {
     var settled = false;
@@ -455,21 +467,26 @@ function waitForReceipt(hashBytes) {
     }
     (function check() {
       if (settled) return;
-      withTimeout(provider.txStatus(hashBytes, accountId, "NONE"), 5000, "Receipt check").then(function (outcome) {
+      /* EXECUTED_OPTIMISTIC: the RPC waits server-side until the
+         transaction executes and returns its outcome in this one
+         call. A transaction that already executed returns at once. */
+      withTimeout(provider.txStatus(hashBytes, accountId, "EXECUTED_OPTIMISTIC"), 30000, "Receipt check").then(function (outcome) {
         if (settled) return;
         var status = outcome && outcome.status;
         if (status && status.SuccessValue !== undefined) { done(resolve); return; }
         if (status && status.Failure) { done(reject, new Error("That move did not go through: " + receiptFailureText(status.Failure))); return; }
-        /* No receipt yet — keep waiting until the timeout. */
+        /* No receipt yet — the server gave up waiting, or the
+           transaction is not visible yet. Ask again until the
+           deadline; a dropped transaction simply never appears. */
         if (Date.now() >= deadline) { done(reject, new Error("The move was sent but did not land in time — try again.")); return; }
-        setTimeout(check, 250);
+        setTimeout(check, 500);
       }, function () {
-        /* Not found yet, a wobbly endpoint, or a timed-out poll —
-           keep polling until the timeout; a dropped transaction
-           simply never appears. */
+        /* A timed-out or failed check — ask again until the
+           deadline. The calls are sequential, so at most one
+           discarded check is still running underneath. */
         if (settled) return;
         if (Date.now() >= deadline) { done(reject, new Error("The move was sent but did not land in time — try again.")); return; }
-        setTimeout(check, 250);
+        setTimeout(check, 500);
       });
     })();
   });
