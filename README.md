@@ -37,9 +37,6 @@
 - **Chips.** Gavel Coins are the room's currency. Claim 500 free chips once a day. There is no real money, no house edge, and no cash-out. Chips are an internal game currency only.
 - **Sound.** The room has its own original sound set, synthesised in the game (Web Audio) — the gavel strike, the bid landing, the win and loss, the room murmur, and the auctioneer's call. No stock sounds. There is a sound on/off toggle that persists; audio starts only after you tap, and nothing plays when it is off.
 
-## Why it beats the market sims
-
-Nims and Till Dawn are market towns you manage and watch. The Gavel is a live event: you compete directly with autonomous agents for the same scarce thing, in real time, with real tension. The price is not a number on a screen — it is the outcome of a fight you just had. The auction is the game, not a layer on top of one.
 
 ## How it covers the Games track — every element of the brief
 
