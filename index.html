@@ -491,6 +491,48 @@ var sound = {
     var t = this.ctx.currentTime + 0.01;
     var notes = [392.0, 440.0, 493.88, 587.33, 493.88, 587.33];
     for (var i = 0; i < notes.length; i++) this.tone(notes[i], 0.11, "triangle", 0.24, t + i * 0.085);
+  },
+  /* (6) OUTBID ALERT — two quick high notes that cut through the
+     room, so the player hears at once that someone raised over them. */
+  alert: function () {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    this.tone(880, 0.09, "triangle", 0.4, t);
+    this.tone(660, 0.12, "triangle", 0.4, t + 0.1);
+  },
+  /* (7) COIN — two bright metallic notes, like chips landing in a
+     tray, when the free chips are claimed. */
+  coin: function () {
+    if (!this.on || !this.unlocked || !this.ensure()) return;
+    var t = this.ctx.currentTime + 0.01;
+    this.tone(1318.5, 0.12, "triangle", 0.35, t);
+    this.tone(1760, 0.18, "triangle", 0.3, t + 0.09);
+  }
+};
+/* ================= Voice — the auctioneer speaks =================
+   The device's own speech (Web Speech API) reads the big moments
+   out loud, so no audio files and nothing to record. It obeys the
+   same on/off toggle and the same first-tap rule as the sound
+   effects, so the one 🔔/🔇 button mutes everything. A new
+   announcement cancels one still being spoken, so calls never queue
+   up and talk over each other. If the device has no speech, the
+   game simply stays silent — nothing breaks. */
+var voice = {
+  supported: ("speechSynthesis" in window),
+  speak: function (text) {
+    if (!sound.on || !sound.unlocked || !this.supported || !text) return;
+    try {
+      var synth = window.speechSynthesis;
+      if (synth.speaking) synth.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-US";
+      u.rate = 1.05;
+      var voices = synth.getVoices();
+      for (var i = 0; i < voices.length; i++) {
+        if (voices[i].lang && voices[i].lang.indexOf("en") === 0) { u.voice = voices[i]; break; }
+      }
+      synth.speak(u);
+    } catch (e) { /* no speech on this device — stay silent */ }
   }
 };
 /* First tap anywhere wakes the audio (mobile browsers require a
@@ -1791,6 +1833,7 @@ var state = { goods: [], open: [], auctions: [], prize: 0, shares: {}, agentBal:
 var prevAuctions = {}; /* auction_id -> {bids, bid, bidder, settled} */
 var seenAuctions = {};
 var myBidAuctions = {};
+var warnedLotId = null; /* auction_id already warned at 10 seconds left */
 var passedLotId = null;
 var pollTimer = null;
 var fastTimer = null;
@@ -1941,6 +1984,7 @@ function onStateChanged() {
       seenAuctions["announced" + a.auction_id] = true;
       if (a.bids_count === 0) {
         sound.call();
+        voice.speak("Bidding is about to start on " + goodName(a) + ".");
         el("room-status").textContent = "A new lot is on the podium — " + goodName(a) + ".";
       }
     }
@@ -1984,6 +2028,7 @@ function onNewBid(a) {
   el("room-status").textContent = name + " bids " + fmt(amount) + " on " + goodName(a) + ".";
   /* if the player was outbid, say so plainly */
   if (player.accountId && bidder !== player.accountId && myBidAuctions[a.auction_id]) {
+    sound.alert();
     setBidMsg("You have been outbid on this lot — raise again or sit it out.", "bad");
     el("bid-card").classList.add("flash-red");
     setTimeout(function () { el("bid-card").classList.remove("flash-red"); }, 2500);
@@ -2028,6 +2073,14 @@ function onSettled(a) {
     setBidMsg("The hammer fell — " + winner + " took this lot for " + fmt(amount) + " coins. The next lot is yours.", "bad");
   }
   el("room-status").textContent = "SOLD — " + goodName(a) + " to " + winner + " for " + fmt(amount) + " coins.";
+  /* The auctioneer calls it: only when the settlement is fresh (the
+     lot ended within the last minute), so a slow poll does not make
+     the voice call a sale that happened minutes ago. */
+  var endedMs = Math.floor(Number(a.ends_at) / 1000000);
+  if (endedMs && Date.now() - endedMs < 60000) {
+    if (a.winner === player.accountId) voice.speak("Sold to you!");
+    else voice.speak("Sold!");
+  }
   setTimeout(function () { poll(); }, 1500);
 }
 
@@ -2087,6 +2140,12 @@ setInterval(function () {
   var m = Math.floor(s / 60), ss = s % 60;
   clockEl.textContent = (m > 0 ? m + "m " : "") + (ss < 10 ? "0" : "") + ss + "s left";
   clockEl.classList.toggle("low", s <= 30);
+  /* The auctioneer calls the end: once per lot, when the clock
+     reaches ten seconds, so the player hears it in time to act. */
+  if (s <= 10 && s > 0 && lot.auction_id !== warnedLotId) {
+    warnedLotId = lot.auction_id;
+    voice.speak("Bidding ends in 10 seconds.");
+  }
 }, 250);
 
 /* Targeted balance refresh after a confirmed move: one chain read
@@ -2604,7 +2663,7 @@ function boot() {
         }).then(function () {
           claiming = false;
           setBidMsg("1500 free chips are yours. Raise your paddle!", "ok");
-          sound.win();
+          sound.coin();
           btn.disabled = true;
           btn.textContent = "Chips claimed for today";
           refreshMyBalance();
