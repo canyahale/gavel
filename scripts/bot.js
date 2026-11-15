@@ -90,6 +90,36 @@ function log(msg) {
 
 function randInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
 
+/* ---- Season context for the AI brain ----
+   The AI plans were shallow because the model only saw this lot. A
+   bidder that knows the season prize, how much time is left, its rank
+   by daily income, and what its rivals can afford can think
+   strategically: save coins for a winnable lot instead of burning them
+   in a fight against a richer rival, or push harder when this item's
+   income would win the season. The season lasts a day, so the prize
+   info is cached for 5 minutes; the rank is computed from the goods
+   view the tick already has, so it costs no extra call. */
+let seasonCache = { at: 0, info: null };
+async function getSeasonInfoCached() {
+  const now = Date.now();
+  if (seasonCache.info && now - seasonCache.at < 5 * 60 * 1000) return seasonCache.info;
+  try {
+    const info = await view('get_season_info', {});
+    if (info) { seasonCache = { at: now, info }; return info; }
+  } catch (e) { /* fall through to the cached (possibly null) value */ }
+  return seasonCache.info;
+}
+function seasonRank(accountId, goods) {
+  // Rank the three bidders by daily income from the goods they own.
+  // The house is excluded (it never wins the prize). Ties share a rank.
+  const incomes = BIDDERS.map(b => ({
+    id: b.accountId,
+    income: goods.filter(g => g.owner_id === b.accountId).reduce((s, g) => s + Number(g.income_per_day), 0),
+  })).sort((a, b) => b.income - a.income);
+  const idx = incomes.findIndex(x => x.id === accountId);
+  return idx < 0 ? 3 : idx + 1;
+}
+
 /* ---- Real AI brain (NEAR AI) ----
    askAI asks the model what this lot is worth to this bidder. It calls
    the near-ai helper as a child process (the helper holds the credential;
@@ -104,7 +134,7 @@ function askAI(bidder, lot, ctx) {
     let child = null;
     try {
       const system = `You are ${bidder.name}, an AI agent bidding in a live auction house. Your personality: ${bidder.persona}. You bid with your own coins for goods that earn income every day. Answer with ONLY a JSON object, no other text.`;
-      const user = `Good: ${lot.goodName} (${lot.goodId}), earns ${lot.income}/day. Current bid: ${lot.currentBid}. Time left: ${lot.secsLeft}s. Your balance: ${ctx.balance}. Goods you own: ${ctx.owned.length ? ctx.owned.join(', ') : 'none'}. Your learned valuation is ${ctx.multiplier}x daily income. Recent results: ${ctx.streak}. Rival you are wary of: ${ctx.wary || 'none'}. Current leader: ${lot.leader || 'nobody yet'}. Reply with ONLY this JSON: {"maxPrice": <the most coins you will pay for this good>, "aggression": <0 to 1, how keen you are>, "line": "<a short thought or taunt, under 12 words>"}`;
+      const user = `Good: ${lot.goodName} (${lot.goodId}), earns ${lot.income}/day. Current bid: ${lot.currentBid}. Time left: ${lot.secsLeft}s. Your balance: ${ctx.balance}. Your daily income from goods you own: ${ctx.dailyIncome}/day (you own: ${ctx.owned.length ? ctx.owned.join(', ') : 'none'}). Rivals' balances: ${ctx.rivals}. Season: prize pool ${ctx.prizePool} coins, ${ctx.seasonSecsLeft}s left; you rank ${ctx.seasonRank} of 3 bidders by daily income. Your learned valuation is ${ctx.multiplier}x daily income. Recent results: ${ctx.streak}. Rival you are wary of: ${ctx.wary || 'none'}. Current leader: ${lot.leader || 'nobody yet'}. Think strategically: if a rival has far more coins than you, do not burn your whole balance chasing this one lot — save it for a lot you can win. If you are close to the top of the season, this item's income could win you prize money, so it is worth more to you. Reply with ONLY this JSON: {"maxPrice": <the most coins you will pay for this good>, "aggression": <0 to 1, how keen you are>, "line": "<a short thought or taunt, under 12 words>"}`;
       const payload = JSON.stringify({
         model: AI_MODEL,
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
@@ -173,27 +203,43 @@ function ensureAIPlans(auction, goods) {
     balanceOf(b.accountId).then((bal) => {
       if (bal < 300) { state.aiPlan[lotId][b.accountId] = null; state.aiInflight.delete(lotId + ':' + b.accountId); return; }
       const L = state.learn[b.accountId];
-      const owned = goods.filter(g => g.owner_id === b.accountId).map(g => g.name);
+      const ownedGoods = goods.filter(g => g.owner_id === b.accountId);
+      const owned = ownedGoods.map(g => g.name);
+      const dailyIncome = ownedGoods.reduce((s, g) => s + Number(g.income_per_day), 0);
       const waryEntry = Object.entries(L.waryOf || {}).sort((a, c) => c[1] - a[1])[0];
       const waryName = waryEntry && waryEntry[1] >= 1 ? (BIDDERS.find(x => x.accountId === waryEntry[0]) || {}).name : null;
-      const ctx = {
-        balance: bal,
-        owned,
-        multiplier: L.multiplier.toFixed(2),
-        streak: L.streak > 0 ? `lost the last ${L.streak}` : 'no recent losses',
-        wary: waryName,
-      };
-      const lot = { goodId: good.good_id, goodName: good.name, income, currentBid: Number(auction.current_bid), secsLeft, leader: auction.current_bidder ? (BIDDERS.find(x => x.accountId === auction.current_bidder) || {}).name || auction.current_bidder : null };
-      return askAI(b, lot, ctx).then((plan) => {
-        state.aiInflight.delete(lotId + ':' + b.accountId);
-        state.aiPlan[lotId][b.accountId] = plan; // null means "AI failed, use rules"
-        if (plan) {
-          state.aiCalls += 1; state.aiOk += 1;
-          log(`AI ${b.name} lot=${lotId} good=${good.good_id} maxPrice=${plan.maxPrice} aggression=${plan.aggression} line="${plan.line}"`);
-        } else {
-          state.aiCalls += 1; state.aiFail += 1;
-          log(`AI FALLBACK ${b.name} lot=${lotId} good=${good.good_id} (no AI plan, using rules)`);
-        }
+      const rivals = BIDDERS.filter(x => x.accountId !== b.accountId);
+      // Rival balances and the season prize, in parallel. A failed read
+      // just leaves that field at 0 / unknown — the AI still gets the
+      // rest, and the rules fallback is unchanged.
+      return Promise.all([
+        ...rivals.map(x => balanceOf(x.accountId).catch(() => 0)),
+        getSeasonInfoCached(),
+      ]).then(([r1, r2, season]) => {
+        const ctx = {
+          balance: bal,
+          owned,
+          dailyIncome,
+          rivals: rivals.map((x, i) => `${x.name}=${[r1, r2][i]}`).join(', '),
+          prizePool: season ? Number(season.prize_pool) : 0,
+          seasonSecsLeft: season ? Number(season.seconds_remaining) : 0,
+          seasonRank: seasonRank(b.accountId, goods),
+          multiplier: L.multiplier.toFixed(2),
+          streak: L.streak > 0 ? `lost the last ${L.streak}` : 'no recent losses',
+          wary: waryName,
+        };
+        const lot = { goodId: good.good_id, goodName: good.name, income, currentBid: Number(auction.current_bid), secsLeft, leader: auction.current_bidder ? (BIDDERS.find(x => x.accountId === auction.current_bidder) || {}).name || auction.current_bidder : null };
+        return askAI(b, lot, ctx).then((plan) => {
+          state.aiInflight.delete(lotId + ':' + b.accountId);
+          state.aiPlan[lotId][b.accountId] = plan; // null means "AI failed, use rules"
+          if (plan) {
+            state.aiCalls += 1; state.aiOk += 1;
+            log(`AI ${b.name} lot=${lotId} good=${good.good_id} maxPrice=${plan.maxPrice} aggression=${plan.aggression} line="${plan.line}"`);
+          } else {
+            state.aiCalls += 1; state.aiFail += 1;
+            log(`AI FALLBACK ${b.name} lot=${lotId} good=${good.good_id} (no AI plan, using rules)`);
+          }
+        });
       });
     }).catch(() => {
       state.aiInflight.delete(lotId + ':' + b.accountId);
