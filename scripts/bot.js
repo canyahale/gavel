@@ -19,7 +19,7 @@ const KEYS_PATH = path.join(__dirname, '..', '.testnet-accounts.json');
 const STATE_PATH = path.join(__dirname, '..', 'bot-state.json');
 const LOG_PATH = path.join(__dirname, '..', 'bot.log');
 const RPC_URL = 'https://rpc.testnet.fastnear.com';
-const GAS = BigInt('30000000000000');
+const GAS = BigInt('100000000000000'); // 100 TGas: open_auction loops over all past auctions to check for a duplicate, so it needs headroom as history grows (30 TGas ran out at ~327 auctions). A proper O(1) fix is owed in the contract; this keeps lots opening meanwhile.
 const TICK_MS = 4000;
 const AUCTION_DURATION_S = 180;
 
@@ -277,6 +277,10 @@ async function maybeClaimIncome(goods) {
     const rich = goods.filter(g => Number(g.income_accrued) > 20);
     if (!rich.length) return;
     for (const g of rich) {
+      // Only claim for goods owned by house or one of our bidders (same guard
+      // as the hourly path — otherwise we spam errors for test seats we hold
+      // no keys for, and the spam defeats the watchdog's healthy check).
+      if (g.owner_id !== HOUSE_ID && !BIDDERS.some(b => b.accountId === g.owner_id)) continue;
       try {
         const tx = await callAs(g.owner_id, 'claim_income', { good_id: g.good_id });
         log(`INCOME ${g.good_id} owner=${g.owner_id} accrued=${g.income_accrued} tx=${tx}`);
@@ -333,6 +337,11 @@ async function openNextLot(goods, auctions) {
       startingBid = last ? Math.ceil(last * 1.05) : Number(good.income_per_day) * 5;
     }
   }
+  // Cap the opening price at 2 days' income, so a new player with one
+  // day's faucet (1,500) can always enter any lot. The auction still
+  // discovers the real price — the cap is only the floor.
+  const cap = Number(good.income_per_day) * 2;
+  if (startingBid > cap) startingBid = cap;
   try {
     const tx = await callAs(seller, 'open_auction', { good_id: good.good_id, starting_bid: String(startingBid), duration_seconds: AUCTION_DURATION_S });
     log(`OPEN lot good=${good.good_id} (${good.name}, ${good.income_per_day}/day) seller=${seller} starting_bid=${startingBid} duration=${AUCTION_DURATION_S}s tx=${tx}`);
@@ -475,6 +484,10 @@ async function maybeBid(auction, goods) {
       if (amount > valuation) amount = valuation;
       if (amount < minBid) continue;
     }
+    // Coins are whole: the contract rejects fractional amounts, so round down
+    // before sending (a valuation from the AI plan is a float).
+    amount = Math.floor(amount);
+    if (amount < minBid) continue;
     try {
       const tx = await callAs(b.accountId, 'place_bid', { auction_id: auction.auction_id, amount: String(amount) });
       log(`BID ${b.name} auction=${auction.auction_id} good=${auction.good_id} amount=${amount} (was ${currentBid}, valuation ${Math.round(valuation)} [${source}], mult ${state.learn[b.accountId].multiplier.toFixed(2)}, balance ${bal}, ${Math.round(secsLeft)}s left) tx=${tx}`);
