@@ -178,6 +178,7 @@ function renderMine() {
   var html = "";
   mine.forEach(function (g) {
     var sh = shareInfo(g.good_id);
+    var onPodium = state.open.some(function (a) { return a.good_id === g.good_id; });
     html += '<div class="good mine"><h3>' + esc(g.name) + "</h3>" +
       '<div class="gmeta">' + esc(kindLabel(g.kind)) + " · earns " + fmt(g.income_per_day) + " coins a day · income waiting: " + fmt(g.income_accrued) + " coins</div>" +
       '<div class="gwhy">' + esc(whyText(g, null)) + "</div>" +
@@ -188,9 +189,10 @@ function renderMine() {
       "</div>" +
       '<div class="gactions"><input class="field" id="list-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Fixed price in coins" aria-label="Fixed price for ' + esc(g.name) + '" />' +
       '<button class="btn btn-dark" type="button" data-action="list-good" data-good="' + esc(g.good_id) + '">List at this price</button></div>' +
+      (onPodium ? '<div class="gactions"><p class="note done">Done — on the podium now. Bidding runs for 10 minutes.</p></div>' :
       '<div class="gactions"><input class="field" id="auc-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Opening bid in coins" aria-label="Opening bid for ' + esc(g.name) + '" />' +
       '<p class="note">Put it up and other players and the room’s regulars will bid for it.</p>' +
-      '<button class="btn btn-gold" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>' +
+      '<button class="btn btn-gold" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>') +
       "</div>";
   });
   grid.innerHTML = html;

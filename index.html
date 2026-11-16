@@ -53,6 +53,7 @@ h1.wordmark span{color:#e6b84e}
 .card p{margin:6px 0}
 .muted{color:#cbb391;font-size:.93rem}
 .note{font-size:.9rem;color:#cbb391}
+.note.done{color:#7ddba4;font-weight:700}
 /* ---- The room ---- */
 .room-wrap{position:relative;border-radius:18px;overflow:hidden;border:2px solid #6b4a26;background:#1a0f08;box-shadow:0 18px 40px rgba(0,0,0,.5)}
 #gl{position:relative;width:100%;height:72vh;min-height:420px;max-height:720px}
@@ -2122,12 +2123,13 @@ function renderHud(lot) {
   el("bid-big").textContent = fmt(lot.current_bid) + " coins";
   el("bid-who").textContent = lot.current_bidder ? "Leading: " + displayName(lot.current_bidder) + " · " + fmt(lot.bids_count) + " bid" + (lot.bids_count === 1 ? "" : "s") : "Opening price — no bids yet · be the first";
   var passed = passedLotId === lot.auction_id;
-  el("btn-bid").disabled = passed;
+  var ownLot = lot.seller_id === player.accountId;
+  el("btn-bid").disabled = passed || ownLot;
   el("btn-pass").textContent = passed ? "Jump back in" : "Sit this lot out";
-  document.querySelectorAll("[data-raise]").forEach(function (b) { b.disabled = passed; });
+  document.querySelectorAll("[data-raise]").forEach(function (b) { b.disabled = passed || ownLot; });
   var nextBid = lot.bids_count === 0 ? Number(lot.starting_bid) : Number(lot.current_bid) + MIN_INCREMENT;
   el("btn-bid").textContent = "🖐 Bid " + fmt(nextBid);
-  el("bid-min-note").textContent = "One tap bids " + fmt(nextBid) + ". Bids must beat the current bid by at least 25 coins. A bid in the last 30 seconds adds 30 seconds to the lot.";
+  el("bid-min-note").textContent = ownLot ? "This is your item — you can't bid on it." : "One tap bids " + fmt(nextBid) + ". Bids must beat the current bid by at least 25 coins. A bid in the last 30 seconds adds 30 seconds to the lot.";
   if (state.loaded && !passed) el("room-status").textContent = "Live — " + good.name + " is on the podium.";
 }
 setInterval(function () {
@@ -2203,6 +2205,7 @@ function renderBidders() {
   if (player.accountId) {
     if (lot && lot.current_bidder === player.accountId) youLast = "Last bid: " + fmt(lot.current_bid) + " — you are leading";
     else if (lot && myBidAuctions[lot.auction_id]) youLast = "You bid on this lot — outbid for now";
+    else if (lot && lot.seller_id === player.accountId) youLast = "You can't bid on your own item";
     else if (lot) youLast = "Your paddle is down — tap Bid to join in";
     else youLast = "Waiting for the next lot";
   } else {
@@ -2254,6 +2257,7 @@ function renderMine() {
   var html = "";
   mine.forEach(function (g) {
     var sh = shareInfo(g.good_id);
+    var onPodium = state.open.some(function (a) { return a.good_id === g.good_id; });
     html += '<div class="good mine"><h3>' + esc(g.name) + "</h3>" +
       '<div class="gmeta">' + esc(kindLabel(g.kind)) + " · earns " + fmt(g.income_per_day) + " coins a day · income waiting: " + fmt(g.income_accrued) + " coins</div>" +
       '<div class="gwhy">' + esc(whyText(g, null)) + "</div>" +
@@ -2264,9 +2268,10 @@ function renderMine() {
       "</div>" +
       '<div class="gactions"><input class="field" id="list-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Fixed price in coins" aria-label="Fixed price for ' + esc(g.name) + '" />' +
       '<button class="btn btn-dark" type="button" data-action="list-good" data-good="' + esc(g.good_id) + '">List at this price</button></div>' +
+      (onPodium ? '<div class="gactions"><p class="note done">Done — on the podium now. Bidding runs for 10 minutes.</p></div>' :
       '<div class="gactions"><input class="field" id="auc-' + esc(g.good_id) + '" type="number" min="1" step="25" placeholder="Opening bid in coins" aria-label="Opening bid for ' + esc(g.name) + '" />' +
       '<p class="note">Put it up and other players and the room’s regulars will bid for it.</p>' +
-      '<button class="btn btn-gold" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>' +
+      '<button class="btn btn-gold" type="button" data-action="open-auction" data-good="' + esc(g.good_id) + '">Put it up for auction (10 min)</button></div>') +
       "</div>";
   });
   grid.innerHTML = html;
@@ -2356,6 +2361,7 @@ function nextBidAmount() {
 function placeBid(amount) {
   var lot = currentLotCache;
   if (!lot) { setBidMsg("No lot is open right now — the next lot will appear on the podium.", "bad"); return; }
+  if (lot.seller_id === player.accountId) { setBidMsg("You can't bid on your own item.", "bad"); return; }
   if (passedLotId === lot.auction_id) { setBidMsg("You are sitting this lot out. Tap “Jump back in” to bid again.", "bad"); return; }
   amount = Math.floor(Number(amount));
   var min = nextBidAmount();
