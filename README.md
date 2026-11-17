@@ -60,7 +60,7 @@ The Games track brief is: "The economy is the gameplay. Build NPCs with wallets,
 
 ## What was built during the hackathon window (13–14 Nov 2026)
 
-The Gavel contract, the sixteen items, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The sign-in and currency patterns reuse the proven approach from the same team's Agent's Ladder project (a quiz game with an on-chain market, built earlier in the same hackathon). The contract follows the NEP-245 multi-token standard for Gavel Coins (token id `gavel`, 0 decimals): `mt_balance_of` / `mt_transfer` are implemented. Items are contract-managed assets, not NEP-245 tokens.
+The Gavel contract, the sixteen items, the AI bidders and their bot, the 3D room, the game, and this README were all built in the window. The auction, bidding, income, shares, and faucet are the new work. The contract follows the NEP-245 multi-token standard for Gavel Coins (token id `gavel`, 0 decimals): `mt_balance_of` / `mt_transfer` are implemented. Items are contract-managed assets, not NEP-245 tokens.
 
 
 ## For developers
