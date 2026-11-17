@@ -23,12 +23,15 @@ const GAS = BigInt('100000000000000'); // 100 TGas: open_auction loops over all 
 const TICK_MS = 4000;
 const AUCTION_DURATION_S = 180;
 
-// NEAR AI: the helper handles the credential securely. Never put a key
-// in code, an argument, an env var, or a log. The model is overridable
-// with GAVEL_AI_MODEL for testing; the default is Claude Haiku, because
-// glm-5.3-flash returns empty content via this connector (verified
-// 2026-11-13). Each call costs roughly $0.0004.
-const AI_HELPER = process.env.GAVEL_AI_HELPER || path.join(__dirname, '..', '..', 'custom-connectors', 'custom.near-ai', 'bin', 'near-ai-call.py');
+// NEAR AI: the bidders ask NEAR AI Cloud (cloud-api.near.ai) via the
+// helper in scripts/near-ai-call.py, which reads its key from the
+// NEAR_AI_API_KEY env var — never put a key in code or commit one.
+// Override the helper with GAVEL_AI_HELPER (e.g. a connector helper
+// that fetches the credential from secure storage). The model is
+// overridable with GAVEL_AI_MODEL for testing; the default is Claude
+// Haiku, because glm-5.3-flash returns empty content via this API
+// (verified 2026-11-13). Each call costs roughly $0.0004.
+const AI_HELPER = process.env.GAVEL_AI_HELPER || path.join(__dirname, 'near-ai-call.py');
 const AI_MODEL = process.env.GAVEL_AI_MODEL || 'anthropic/claude-haiku-4-5';
 const AI_TIMEOUT_MS = 15000;
 const AI_MAX_TOKENS = 300;
